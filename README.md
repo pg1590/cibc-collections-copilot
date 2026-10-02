@@ -22,8 +22,8 @@ The local submission draft is `submission/Adda Wale_SystemDesign.pdf`: one archi
 Use Python 3.10+ with `requirements-pdf.txt` installed in your own virtual environment, then run:
 
 ```sh
-python scripts/generate_submission.py
 mkdir -p submission/previews
+python scripts/generate_submission.py
 pdftoppm -scale-to 1100 -png 'submission/Adda Wale_SystemDesign.pdf' submission/previews/page
 ```
 
@@ -39,4 +39,4 @@ The supervisor made the GitHub repository public to enable access; original pref
 
 ## Verified delivery state
 
-The six-page PDF has passed page-count, heading, member-name, text-boundary and visual checks. Local Git history is saved. Remote upload attempted through the connector failed with `403 Resource not accessible by integration`; SSH authentication failed with `Permission denied (publickey)`. Repository permission metadata does not establish effective integration write access. Nothing was uploaded. A working GitHub repository-app installation for pg1590 or authenticated Git credentials is needed before pushing.
+The six-page PDF has passed page-count, heading, member-name, text-boundary and visual checks. Local Git history and reviewed project files have been pushed to `pg1590/cibc-collections-copilot` over SSH after the supervisor added the public authentication key. Source PDFs, local extracts, credentials and raw model responses remain excluded. The generated PDF and portable delivery backups remain local. The GitHub connector previously returned `403 Resource not accessible by integration`; SSH provides the verified upload path. Organizer submission has not been performed.

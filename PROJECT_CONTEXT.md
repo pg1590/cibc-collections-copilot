@@ -35,8 +35,11 @@ Supervisor authorizes target tables, columns and relationships to be designed by
 ## Remote state
 Canonical repo: pg1590/cibc-collections-copilot. Connector reports push/admin permission after supervisor made it public. Reviewed project files may be uploaded; confidential source PDFs/extracts and raw model responses remain local.
 
-## Remote write blocker
+## Earlier remote write blocker (resolved through SSH)
 Actual README upload failed with connector 403; local SSH keys are not accepted by GitHub. Remote remains empty/public. No data or project files uploaded. Resolve repository-app installation/authenticated Git access before attempting push; source-material exclusions continue to apply.
 
 ## Resume check — 2 October 2026
 GitHub connector still reports repository push/admin permission, but an actual README create retry returned 403 `Resource not accessible by integration`. Repository contents returned 404 `This repository is empty`. Connector installation listing includes two other accounts, with no pg1590 installation visible. This points to missing repository-app installation access; permission metadata alone is insufficient. No GitHub CLI is installed locally. The six-page PDF and portable backups remain available; application implementation and organizer submission still await supervisor instructions.
+
+## SSH delivery completed — 2 October 2026
+Supervisor added the local Ed25519 public authentication key to GitHub. SSH authenticated as pg1590; `git ls-remote origin` confirmed an empty repository before the initial push. `git push -u origin main` succeeded, uploading reviewed tracked project files and local Git history. Sensitive source material and raw reviews were never tracked. The generated PDF and portable backups remain local. Use SSH for subsequent Git operations; the connector write failure has not been resolved or retested. Application implementation and organizer submission remain outside the current scope.
