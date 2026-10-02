@@ -30,7 +30,7 @@ Evaluate hardship detection against a keyword-search baseline on independently l
 
 ### Layer 1
 
-Data pipeline: build Customer 360 (C360), a unified record with one golden customer ID. Python, Polars and DuckDB handle ETL: extracting source files, transforming them into consistent formats and loading checked records into CockroachDB. Preserve raw files, deduplicate records and validate schemas. AI suggests source-to-output field mappings; a data steward approves them.
+Data pipeline: build Customer 360 (C360), a unified record with one golden customer ID. Python, Polars and DuckDB handle ETL: extracting source files, transforming them into consistent formats and loading checked records into CockroachDB. Preserve raw files, deduplicate records and use Pandera for schema and data-quality checks. AI suggests source-to-output field mappings; a data steward approves them.
 
 Entity resolution: link customer IDs across product systems using approved, nonconflicting exact identifiers where available. RapidFuzz suggests similar records for manual review; fuzzy matches never merge automatically. Keep unresolved records separate and flag incomplete views. A versioned crosswalk, the source-ID-to-golden-ID mapping, supports rollback of incorrect links.
 
@@ -45,7 +45,7 @@ Data lineage links every displayed fact to its source, transformation rule and d
 
 ### Layer 2
 
-The Insight and NLP layer converts plain-English questions into controlled database queries. Example: "How many of my assigned card customers are at least 30 days overdue?" FastAPI exposes the backend API; Next.js provides the frontend.
+The Insight and NLP layer converts plain-English questions into controlled database queries. Example: "How many of my assigned card customers are at least 30 days overdue?" FastAPI exposes the backend API; Next.js with shadcn/ui components provides the frontend, including customer tables, evidence panels and review dialogs.
 
 1. Parse: a large language model (LLM) converts the question into a structured query plan containing a metric, filters and date range. It receives the metric catalog, which defines supported calculations, rather than raw customer rows. Unclear requests trigger clarification.
 

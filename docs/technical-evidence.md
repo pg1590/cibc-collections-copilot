@@ -20,3 +20,10 @@ Resume verification on 2 October 2026: the README create retry again returned 40
 ## Verified SSH delivery
 
 After the supervisor added the public authentication key on 2 October 2026, GitHub SSH returned `Hi pg1590! You've successfully authenticated`. The SSH test exits with code 1 because GitHub does not provide shell access; the response confirms authentication. `git ls-remote origin` succeeded with no refs, then `git push -u origin main` successfully created remote main and configured tracking. Reviewed project files and local commit history are uploaded; source PDFs, extracts, credentials, raw responses and generated delivery artifacts remain local. SSH resolves project delivery without requiring connector write access.
+
+## Open-source component references
+
+- Pandera: https://github.com/unionai-oss/pandera and https://github.com/unionai-oss/pandera/blob/main/docs/source/polars.md. Supports Polars schema and data checks. During implementation, ensure data-level checks actually execute; validating only a lazy schema is insufficient.
+- shadcn/ui: https://github.com/shadcn-ui/ui and https://ui.shadcn.com/docs/components. Reusable, customizable frontend component source for tables, panels and review dialogs.
+
+These references support proposed component selection; no application integration has been performed.

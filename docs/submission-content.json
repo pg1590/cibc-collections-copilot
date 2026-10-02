@@ -30,7 +30,7 @@
         {
           "heading": "Layer 1",
           "paragraphs": [
-            "Data pipeline: build Customer 360 (C360), a unified record with one golden customer ID. Python, Polars and DuckDB handle ETL: extracting source files, transforming them into consistent formats and loading checked records into CockroachDB. Preserve raw files, deduplicate records and validate schemas. AI suggests source-to-output field mappings; a data steward approves them.",
+            "Data pipeline: build Customer 360 (C360), a unified record with one golden customer ID. Python, Polars and DuckDB handle ETL: extracting source files, transforming them into consistent formats and loading checked records into CockroachDB. Preserve raw files, deduplicate records and use Pandera for schema and data-quality checks. AI suggests source-to-output field mappings; a data steward approves them.",
             "Entity resolution: link customer IDs across product systems using approved, nonconflicting exact identifiers where available. RapidFuzz suggests similar records for manual review; fuzzy matches never merge automatically. Keep unresolved records separate and flag incomplete views. A versioned crosswalk, the source-ID-to-golden-ID mapping, supports rollback of incorrect links.",
             "Data model: aggregate account and event records before joining them to customers, preventing duplicate balances or counts. Preserve multiple collection cases. Separate credit exposure (loan/card balances) by currency and sole/joint ownership; keep deposits separate. Portfolio totals count each joint account once without revealing another holder's identity.",
             "Data lineage links every displayed fact to its source, transformation rule and date. Calculate recent-history windows from the supplied 28 September 2026 snapshot. A quality gate publishes a consistent data version only after required checks pass. On failure, retain the last passing version and show its freshness. Exact source mappings remain TBC (to be confirmed)."
@@ -44,7 +44,7 @@
         {
           "heading": "Layer 2",
           "paragraphs": [
-            "The Insight and NLP layer converts plain-English questions into controlled database queries. Example: \"How many of my assigned card customers are at least 30 days overdue?\" FastAPI exposes the backend API; Next.js provides the frontend.",
+            "The Insight and NLP layer converts plain-English questions into controlled database queries. Example: \"How many of my assigned card customers are at least 30 days overdue?\" FastAPI exposes the backend API; Next.js with shadcn/ui components provides the frontend, including customer tables, evidence panels and review dialogs.",
             "1. Parse: a large language model (LLM) converts the question into a structured query plan containing a metric, filters and date range. It receives the metric catalog, which defines supported calculations, rather than raw customer rows. Unclear requests trigger clarification.",
             "2. Validate: Pydantic checks the plan's structure and allowed values. Server-side authorization enforces user roles and assigned-case access. Reject unknown metrics, protected dimensions, unsafe combinations and SQL fragments. Model output never grants access.",
             "3. Execute: SQLAlchemy builds parameterized, read-only SQL from approved templates. Filter values are passed as parameters rather than executable SQL. Use a restricted database account, a five-second timeout, a 100-row limit and one consistent published data version.",

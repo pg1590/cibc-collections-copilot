@@ -1,7 +1,7 @@
 flowchart TB
   SRC["Synthetic banking files: accounts, cases, contacts, promises and notes; source mappings TBC"]
   subgraph L1["Layer 1: Data Product Factory"]
-    ETL["ETL: ingest, deduplicate and validate | Python / Polars / DuckDB"]
+    ETL["ETL | Python / Polars / DuckDB; Pandera schema and data-quality checks"]
     MAP["AI schema-mapping suggestions -> HUMAN steward approval"]
     ID["Entity resolution: exact links + RapidFuzz candidates -> HUMAN merge review"]
     C360["Customer 360, versioned ID crosswalk and data lineage | CockroachDB"]
@@ -24,7 +24,7 @@ flowchart TB
   end
   C360 --> SQL
   C360 --> RETRIEVE
-  UI["Next.js frontend -> FastAPI backend; LLM provider TBC"] --> PLAN
+  UI["Next.js + shadcn/ui frontend -> FastAPI backend; LLM provider TBC"] --> PLAN
   UI --> RETRIEVE
   ANSWER --> UI
   REVIEW --> UI

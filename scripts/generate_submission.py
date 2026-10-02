@@ -79,7 +79,7 @@ class Architecture(Flowable):
         ])
         arrow(w/2, 485, w/2, 468)
         box(0, 337, w, 130, 'LAYER 1 | DATA PRODUCT FACTORY', [
-            'ETL pipeline | Python / Polars / DuckDB: ingest, deduplicate and validate',
+            'ETL | Python / Polars / DuckDB; Pandera schema and data-quality checks',
             'AI suggests schema mappings; a HUMAN data steward approves',
             'Entity resolution | exact links + RapidFuzz suggestions; HUMAN merge review',
             'CockroachDB: Customer 360 (C360), versioned ID links and data lineage'
@@ -103,7 +103,7 @@ class Architecture(Flowable):
         box(0, 48, w, 54, 'GOVERNANCE ACROSS ALL THREE LAYERS', [
             'Role-based access | Protected-attribute exclusion | Human review | Audit | Monitoring'
         ], fill=colors.HexColor('#FFF3F6'), border=BURGUNDY)
-        text(0, 37, w, 'Next.js frontend -> FastAPI backend. LLM = large language model; provider TBC. AI proposes; humans approve. No real customer actions.', size=9)
+        text(0, 37, w, 'Next.js + shadcn/ui frontend -> FastAPI backend. LLM = large language model; provider TBC. Human approval before simulated actions.', size=9)
 
 def make_table(t):
     rows = [[para(v, CELL) for v in t['headers']]]
