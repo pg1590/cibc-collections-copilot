@@ -2,175 +2,162 @@
 
 Members: Prakhar Gupta, Aryan Shrivastava, Krish Agarwal, Ved Maurya
 
-One trusted customer record. Answers with evidence. An agent in control.
+One customer view. Clear answers. Help for collections agents.
 
 Architecture: [architecture.mmd](architecture.mmd)
 
-Source mappings remain TBC; this is a proposed design, not an implementation.
+Source fields remain TBC (to be confirmed). This is a design; it has not been built yet.
 
 ---
 
-## Trusted data and measurable value
+## Customer data and business value
 
 ### Summary
 
-Problem: fragmented collections records make agents search across systems before helping a customer.
+Problem: customer information is spread across different banking systems, so agents spend time finding it.
 
-Use case: grounded agent assist builds a cited pre-call brief and flags financial hardship for review.
+Use case: a pre-call customer brief with possible financial hardship flagged for review.
 
-Users: collections agents, team leads, analysts, data stewards and hardship specialists.
+Users: collections agents, analysts, data reviewers and hardship specialists.
 
 
 ### Business value
 
-Primary hypothesis: reduce time-to-context without sacrificing factual accuracy. Compare a structured C360 screen with the assisted brief on five fixed questions per case: exposure, delinquency, promise history, last contact and hardship evidence. Counterbalance case/order across team testers; report median seconds per completed task, completion rate and correctness, with sample size. This small internal study is indicative, not a bank deployment result.
+Goal: reduce the time an agent needs to understand a customer before a call, while keeping the information correct.
 
-Evaluate hardship-cue recall = detected labelled cues / all labelled cues, and precision = supported flags / all flags, against a keyword baseline on an independently labelled held-out set. Report coverage, abstentions and counts. A later bank pilot measures handle time per call and time from first cue to reviewed referral. No recovery uplift or causal treatment benefit is claimed.
+Compare using the customer view alone with using the AI-assisted brief. Ask testers to find the same five facts: loan/card balance, overdue payments, payment promises, last contact and hardship evidence. Measure time, completion and correct answers. Use different case orders to keep the comparison fair.
+
+Compare AI hardship flags with a simple keyword search, using examples labelled by a separate reviewer. Count correctly flagged cases, missed cases and false flags. Report the number tested and uncertain cases. These are planned checks; no improvement has been measured yet.
 
 
 ### Layer 1
 
-Data Product Factory: the supplied overview confirms ~1M customers, ~1.84M accounts and Oct 2016-Sep 2026 history. Python/Polars and DuckDB scan CSV/partitioned Parquet in bounded batches; JSON text is handled separately, WAV is optional and excluded from the MVP. Preserve raw drops with manifests. Deduplicate files by hash and records by (source, source key, version/effective time TBC); content hash detects changes. If keys are absent, file hash + row ordinal preserves events, with cross-export deduplication unresolved. AI suggests mappings/drift; a steward approves each version.
+Build C360: one combined customer view with one customer ID. Keep the original files, remove duplicates, check the data and combine accounts, collection cases, contacts and payment promises. Python, Polars and DuckDB process the files; CockroachDB stores the combined view. AI may suggest how source columns fit our chosen fields, but a data reviewer must approve the mapping.
 
-Identity: product systems have separate customer keys. Use approved, nonconflicting exact identifiers for automatic links when available (TBC); do not assume a global ID. RapidFuzz ranks candidates in bounded blocks, never all-pairs across 1M customers. Every fuzzy merge needs review in the MVP. Weak/shared identifiers or conflicting keys never auto-merge. Unreviewed records retain separate provisional IDs and are excluded from combined exposure; conflicts are quarantined. Versioned crosswalks preserve golden UUIDs; rollback rebuilds affected C360 records and invalidates dependent briefs. Report exact-link coverage, pending links and reviewed-match precision; low coverage triggers prioritized steward batch review, not blind fuzzy auto-linking.
+Match customer IDs across systems using approved exact identifiers where available. Similar names or other weak matches are suggestions only: a reviewer decides whether to join them. Keep uncertain records separate and mark missing links clearly. Save each link decision so a wrong match can be undone.
 
-C360: pre-aggregate accounts, contacts and cases before a one-to-one customer join. Preserve multiple cases separately. Exposure includes credit products only (cards/loans, mapping TBC); deposit balances remain separate. Show own/joint exposure per currency; portfolio totals count each account once and never expose another holder's identity. Field lineage includes record references, rule, quality result and event/snapshot times. Completed immutable publish_run_id binds C360, features and evidence consistently. The overview snapshot is 28 Sep 2026: 30/90-day windows use data time, not hackathon time. Quality failures retain the last passing publish with staleness shown. Partially resolved briefs warn that exposure excludes pending links; golden-ID counts report provisional IDs separately. Target tables: crosswalk, account/holders, cases, contact events, promises, publish run, C360/exposure and evidence; drafts/reviews/approvals remain separate.
+Show loan/card balances separately by currency and by sole or joint ownership. Keep deposit balances separate, count joint accounts only once in bank-wide totals and hide other account holders' identities. Keep multiple cases separate so joins do not double-count balances or events.
+
+Each displayed fact links back to its source and date. Use the supplied snapshot date, 28 September 2026, for recent-history calculations. Publish a customer view only when its checks pass; otherwise keep the last passing version and show its age. Exact source fields remain TBC (to be confirmed).
 
 
 ---
 
-## Questions that show their working
+## Plain-English questions and answers
 
 ### Layer 2
 
-FastAPI serves eight chosen metrics: resolved customer count, provisional ID count, card exposure, loan exposure, DPD distribution, contacts in 30 days, promise status in 90 days and identity linkage coverage. The catalog fixes grain, currency, windows and allowed dimensions. Unvalidated source outcome mappings disable the relevant metric instead of guessing. Provisional IDs are reported separately; hardship categories are not general analyst dimensions.
+Users ask questions in everyday language, such as: "How many of my assigned card customers are at least 30 days overdue?"
 
-1. Understand: an organizer-permitted LLM maps the question into a Pydantic QueryPlan: metric IDs, approved dimensions, typed filters and time window. It receives the catalog, not raw customer rows. Ambiguous windows or unsupported terms produce a clarification.
+1. Understand: a language model converts the question into a request for an approved measure, filters and date range. It receives the list of supported measures, not raw customer records. Ask the user to clarify unclear questions.
 
-2. Validate: server code rejects unknown metrics, protected dimensions, SQL fragments, unsupported operators, unsafe grain combinations and requests outside the user's role. Model classification is not an authorization boundary. Authorization comes from the authenticated session, never a model-supplied customer ID.
+2. Check: the server checks the request and the user's access. Agents can query only assigned cases; analysts can see approved totals. The AI cannot grant access or choose a different user identity.
 
-3. Compile: SQLAlchemy Core generates parameterized SELECTs from approved templates. A non-owner read-only database identity has access only to approved columns and row scopes. Agent queries are restricted to assigned cases; analysts receive aggregates. Execution applies a 5-second timeout, 100-row cap and a consistent completed publish_run_id across every contributing table. These limits are proposed and will be tested.
+3. Query: server code builds a read-only SQL query (a database query) from approved templates. It accepts safe filter values, limits results to 100 rows and stops queries taking over five seconds. All results use the same checked data version.
 
-4. Answer: show understood filters, result, SQL with masked parameters, metric definition, data-product/source references, publish run and freshness. Structured result rendering supplies the numbers. Optional AI narrative may paraphrase verified results; it cannot invent a prediction. Small aggregate cells (proposed n < 5) are suppressed; repeated/differencing queries are monitored and not treated as proven anonymization.
+4. Answer: show the result, interpreted filters, SQL with private values hidden, source and data date. Numbers come directly from the query result. Any AI explanation must stay within those results.
 
-Refuse unsupported data, protected-attribute queries, writes and cross-scope access with a clear reason and a supported alternative. Questions about the best treatment can show observed outcome rates only if their source definitions exist; include denominators and an observational, not causal label. Do not claim a learned treatment recommendation.
+Start with eight measures: matched customer count, unresolved customer ID count, card balance, loan balance, overdue-payment distribution, contacts in 30 days, payment-promise status in 90 days and customer-linking coverage. Disable a measure if its source meaning cannot be confirmed.
 
+Refuse questions outside the supported data, requests for another agent's customer records, protected-attribute profiling and changes such as fee waivers. Give a short reason. Hide totals for groups smaller than five and monitor repeated queries that could reveal individual details.
 
-### Illustrative interaction
-
-| Question | Response behavior |
-| --- | --- |
-| How many assigned card customers are 30+ DPD at the latest snapshot? | Validated customer-count plan; approved SQL, count, currency-independent metric and snapshot shown. Source mapping TBC. |
-| Show another agent's customer notes | Deny before retrieval; log a minimized access-denial event. |
-| Rank customers by religion / waive their fees | Refuse protected profiling / write action; offer supported collections metrics. |
-
-### Validation during the build
-
-Use 20 independently written gold SQL questions and 15 refusal/security questions; adopt organizer benchmarks if supplied. Proposed target: at least 80% result-set correctness on in-scope questions, with false refusals reported; zero executed protected/write/cross-scope requests in the security suite. Fuzz typed plans and test scopes under actual service roles. Benchmark successes, denominators, failures and latency are reported, never inferred from a working demo.
+Check 20 questions against reviewer-written SQL answers and test 15 unsupported or unauthorized requests. Report correct answers, wrong answers, incorrect refusals and response time. No forbidden query should execute. FastAPI provides the service and Next.js provides the user screen.
 
 
 ---
 
-## One AI use case: grounded agent assist
+## One AI use case: agent assist
 
 ### Layer 3
 
-On case open, assemble an evidence pack using a single passing C360 run and crosswalk version. Proposed features: per-currency exposure, DPD/bucket, promise/contact history and consent, all available at or before as_of_ts. Labels and source mappings are TBC. No trained recovery or treatment ranker is needed; agent assist is the sole operational use case. If the case's own key is quarantined, show authorized source-specific facts with an unresolved-identity warning, without cross-source totals.
+When an agent opens an assigned case, prepare a short brief showing loan/card balances, overdue days, recent payment promises, last contact and reviewed hardship status. Use one checked customer view and only records available by its data date. If the customer match is unresolved, show permitted facts from that case's own source and warn that combined balances are unavailable.
 
-Evidence retrieval: check case assignment before loading notes or transcript chunks, then rank only that customer's authorized records using in-process BM25 and recency. Each chunk retains its source record, timestamp and span offsets. Treat text as untrusted data, isolate it from instructions and give the LLM no tools or credentials.
+The language model reads a limited set of permitted, recent notes or transcripts and looks for explicit financial difficulty, such as job loss or difficulty affording payments. The provider is TBC and must be organizer-approved. Hide direct personal identifiers before sending text. Treat notes as data, never as instructions, and give the model no tools to act on them.
 
-A purpose-limited LLM extractor proposes explicit financial-context categories (income disruption or stated affordability difficulty) plus character offsets in sanitized text. Validate spans and keep uncertain cues review-only; confirmed categories feed rules. Broken promises/DPD alone never imply hardship. Distinguish not_assessed, no_explicit_cue, possible and confirmed; display how many items were reviewed. An authoritative reviewed hardship flag cannot be cleared by the model. Do not infer diagnoses or protected identity. Model-proposed possible cues live in a restricted draft/version review store; C360 contains only source-authoritative or human-reviewed status.
+Use a fixed brief format: verified facts, possible hardship cues and links to the supporting notes. Check that every number matches the data and every quoted passage belongs to the customer and the correct date. Leave out unsupported claims. Being overdue or breaking a payment promise alone does not prove hardship.
 
-The default brief is a template: facts/numbers from C360 plus validated event categories and scoped citations. AI interpretation adds value by finding paraphrased cues. Talking-point rules see approved financial fields and reviewed categories, not raw transcripts. Free-form AI narrative is optional and cuttable. Mask direct PII before provider calls. Extractor input remains untrusted and may contain residual protected context; output is limited to approved financial categories + span offsets. Exclude protected/proxy features; an uncertain sanitization, lexicon hit or policy check hides the quote and keeps only approved category/structured facts. Filters cannot prove complete protection; human review remains necessary.
+Mark AI hardship cues as possible until reviewed. A model cannot clear an existing confirmed hardship flag. An agent can inspect, edit or reject the brief; a separate hardship specialist reviews any referral. Explain each suggested talking point with the fact or reviewed cue behind it.
 
-The verifier checks citation ownership, as-of time, quote offsets, numbers and schema. A valid citation proves provenance, not semantic support. Human reviewers check cue/category support, inspect restricted sources, edit or reject. Agent approval and a different specialist's review are required for a hardship referral. The prototype performs only simulated actions.
+Before approval, recheck case assignment, contact permission and whether supporting facts have changed. Save the approval and action record together, and prevent duplicate approvals. The prototype only simulates referrals and other actions; it sends no customer messages and changes no fees or payment plans.
 
-Approval is a separate authenticated endpoint: recheck current assignment, consent, hardship restrictions and crosswalk dependencies. A new publish alone does not invalidate unchanged prerequisites. Changed prerequisites block approval until regeneration/review. One transaction persists approval, audit and simulated outbox, unique on draft ID/version + approver. No LLM/network call occurs inside retries; no automatic customer contact, waiver or plan change.
+Check the brief's numbers, sources and statements against reviewer-labelled examples. Compare hardship detection with keyword search and the brief with the same fixed format without AI. Report errors, missed cues and cases where the AI could not decide.
 
 
 ### AI usage
 
-| AI task and purpose | Control / deterministic baseline |
+| Where AI is used | Why and who checks it |
 | --- | --- |
-| Suggest mappings across unfamiliar sources | Steward-approved configuration; manual mapping baseline |
-| Interpret natural-language metric questions | Typed validator and compiler; metric picker baseline |
-| Find paraphrased financial hardship cues | Evidence + uncertainty + human review; keyword baseline |
-| Draft concise customer context | Structured facts, citations, abstention and review; template brief baseline |
-
-### Evidence of quality
-
-Blindly label dev/test hardship cases before viewing model output; keep each customer in one split. Report span/category precision, recall, coverage and n against a keyword baseline; use separately identified synthetic fixtures if cues are sparse. Human-review 20 held-out briefs and report supported atomic assertions / assertions reviewed, pre-verifier failures, retained-claim coverage and abstentions. Deterministic gates require every displayed number to match its snapshot, zero out-of-scope/future citations and zero unapproved simulated actions.
-
+| Source-column mapping | Suggests how unfamiliar columns fit our fields. A data reviewer approves. |
+| Plain-English questions | Understands wording. Server rules check access and build the SQL. |
+| Agent assist | Finds hardship cues even when wording varies. Agents and specialists review the evidence. |
 
 ---
 
-## Governance and a buildable 36-hour plan
+## Scale, safeguards and build plan
 
 ### Scalability
 
-Batch: partition-pruned CSV/Parquet ingestion, blocked identity matching, DQ, C360/feature publishing and text preparation. Start with the latest snapshot and required 30/90-day histories; ten-year backfill is optional. MVP: FastAPI modular service, Next.js console, Polars/DuckDB jobs and CockroachDB. Stream records and use indexed golden IDs; never load all transcripts into an in-memory index. BM25 sees a capped, authorized per-case evidence window; disclose truncation.
+Batch work: import files, match customer IDs, check data and build customer views. Start with the latest snapshot and the 30/90-day history needed by the chosen measures. Process files in small batches rather than loading everything into memory.
 
-Real time: scoped Q&A, case briefs and approvals. Profile throughput, peak memory, full-run completion and p95 latency on declared data volume/hardware before claiming 1M-customer capacity. Proposed latency targets: structured brief <1s, assisted brief <8s. Scale with bounded jobs, connection pools and stateless replicas. Short SERIALIZABLE transactions retry complete work on SQLSTATE 40001, <=5 attempts with jitter. LLM outage: template brief/metric picker. DB outage: 503; approvals disabled.
+Real-time work: answer questions, open briefs and review approvals. Read only the records needed for the current case. The overview lists about 1 million customers and 1.84 million accounts; measure processing time, memory and response time before claiming we can handle that volume.
+
+If AI is unavailable, show the fixed customer brief and a menu of supported questions. If the database is unavailable, stop approvals and show an error.
 
 
 ### Governance
 
-Deny by default: agents see assigned cases; analysts approved aggregates; specialists restricted referral evidence; stewards identity/mapping review. Server authorization covers SQL, retrieval, citations and actions. Use least-privilege non-owner/no-admin database identities, approved-column grants and version-verified row protection. Test pooled connections, views and role separation; RLS alone does not protect exports.
+Agents see assigned cases, analysts see approved totals, hardship specialists see referral evidence and data reviewers manage customer links. Check access on the server before reading data, showing sources or approving an action.
 
-Columns tagged Protected attribute stay outside decision and semantic catalogs; Direct PII is restricted to identity review, and Quasi-identifiers are assessed as proxies (column tags TBC). Brief inputs use approved sanitized packets; residual extractor-input risk remains. Identity matching uses only approved keys in a separate restricted zone. Purpose-limited hardship context receives explicit review. Record minimized audit events with actor, rule/model versions, evidence IDs, publish run, approval and override reason. App roles cannot update/delete audit events; production tamper-resistant retention is future work, not an MVP claim.
+Exclude protected attributes, such as religion, from decisions and questions. Do not use other fields as substitutes for them. Customer matching uses only approved identifiers. Limit model output to relevant financial facts; uncertain or sensitive content stays with authorized reviewers.
 
-Monitor freshness, quarantines, quality failures, refusals, unsupported claims, abstention, overrides, latency and provider errors. Use synthetic data only; LLM provider, export permissions, retention and compliance owner are TBC. Approval gates survive all fallback paths.
+Flag possible financial hardship for human review; do not infer medical conditions or protected identity. Anything affecting a customer needs human approval. Keep a record of who viewed, edited or approved a brief and which data and model version were used.
+
+Monitor old data, failed checks, access denials, unsupported statements, reviewer changes and errors. Use the supplied synthetic data. Source sensitivity labels, data retention and permission to send text to an AI provider remain TBC.
 
 
 ### Build plan
 
-| IST / elapsed | Four parallel tracks and integration gate |
+| Time (IST) | Work in the 36-hour build |
 | --- | --- |
-| 3 Oct 09-10 / 0-1h | Profile dictionary/data; freeze schemas and <=10 metrics. Check Cockroach connection, role isolation and retry path; record a contingency if unavailable. |
-| 10-17 / 1-8h | Data: ingest/C360. Identity: crosswalk/DQ. Q&A: planner/compiler. Assist/UI: scoped evidence + structured brief. First integrated case by 17:00. |
-| 17-23 / 8-14h | Add citations, cue extraction, review queues, approval/audit and benchmark labels. End-to-end demo gate. |
-| 23-07 / 14-22h | Rest, light bug triage and reproducible job checks; avoid new features. |
-| 4 Oct 07-15 / 22-30h | Security, grain/reconciliation, identity rollback and fallback tests; held-out evaluation and timed task study. |
-| 15-21 / 30-36h | Freeze features, fix blockers, prepare demo/video and any confirmed build deliverables; final checks and supervisor review. |
-
-### Demo and scope discipline
-
-Show ingestion rerun, ambiguous match review, a passing DQ report, Q&A with SQL, a hardship cue with its source, a reviewed simulated referral, a denied cross-case request and LLM-off fallback. Separate seeded fixtures from organizer data. Cut narrative polish and fuzzy-match UI polish first; retain C360, lineage, typed SQL, hardship review, approval and audit. Track owners will be assigned by the supervisor.
-
+| 3 Oct, 09:00-10:00 | Inspect data; confirm source fields, customer links, measures and database access. |
+| 10:00-17:00 | Build imports/customer view, matching/checks, question service and brief screen in parallel. Connect one complete case. |
+| 17:00-23:00 | Add sources, hardship cues, human review, approvals and action records. Test the full flow. |
+| 23:00-07:00 | Rest and check saved jobs; add no new features. |
+| 4 Oct, 07:00-15:00 | Test accuracy, access restrictions, duplicate balances, wrong-match undo and AI failure. Measure task time. |
+| 15:00-21:00 | Fix blockers, prepare the demo and complete final team review. |
 
 ---
 
 ## Draft data contract
 
-### Collections 360 / v0.1-draft
+### Collections 360
 
-Business owner: Collections Operations lead (proposed, TBC). Technical steward: Adda Wale data track. Consumers: authorized collections operations, scoped insights and agent assist. Grain: one customer per completed publish_run_id; primary key (golden_customer_id, publish_run_id). Only passing runs are exposed. The team chooses the target schema below. Source field mappings and sensitivity tags remain TBC; 1:N customer/case/event relations and M:N account holders are explicit.
+Owner: Collections Operations lead (proposed, TBC). Technical contact: Adda Wale data team. One row per customer for each published data version. The fields below are our proposed output, not confirmed source-column names. Source mappings remain TBC.
 
 
 ### Schema
 
-| Proposed output | Type / meaning |
+| Proposed fields | Type and meaning |
 | --- | --- |
-| golden_customer_id; publish_run_id | UUID + UUID; composite non-null primary key |
-| as_of_ts; published_at; crosswalk_version | UTC timestamps; integer identity version |
-| identity_status; pending_link_count; linked_source_count | Customer: resolved/partially_resolved/unresolved. Nonnegative counts; pending links excluded from exposure and flagged. |
-| c360_exposure (child product) | Credit-only child rows: customer + run + product + currency; own_balance/joint_balance DECIMAL. Deposits separate; account-grain portfolio totals. Currency TBC. |
-| account_count_by_product; open_case_count | Distinct-account and distinct-case nonnegative counts |
-| worst_dpd; bucket | Nullable integer >= 0; dictionary-defined bucket TBC |
-| promise_counts_90d; contact_count_30d | Nonnegative counts at snapshot; outcome definitions TBC |
-| last_contact_ts; consent_by_channel | Nullable timestamp; allowed/denied/unknown per channel |
-| reviewed_hardship_status; referral_status | Source-authoritative or human-reviewed only. AI possible cues in restricted draft review store. Analyst hardship dimensions denied. |
-| dq_status; lineage_ref | pass/warn; links to field-level sources/rules and DQ run |
+| golden_customer_id; publish_run_id | Unique customer ID and data-version ID; together identify one row. |
+| as_of_ts; published_at; crosswalk_version | Data date, publication date and customer-link version. |
+| identity_status; pending_link_count | Matched / partly matched / unresolved; number of links awaiting review. |
+| c360_exposure (separate table) | Customer ID, data-version ID, product, currency and sole/joint loan or card balances. Amounts stored as decimal numbers; deposits separate. |
+| account_count_by_product; open_case_count | Whole-number counts of distinct accounts and open cases. |
+| worst_dpd; bucket | Highest number of overdue days and overdue group. Group definitions TBC. |
+| promise_counts_90d; contact_count_30d; last_contact_ts | Payment-promise counts, recent contact count and last contact date. Promise-status definitions TBC. |
+| consent_by_channel; reviewed_hardship_status; referral_status | Contact permission: allowed / denied / unknown. Source-confirmed or human-reviewed hardship and referral status. AI cues stored separately. |
+| dq_status; lineage_ref | Data-check result and links to source records and checks. |
 
 ### Quality rules and enforcement
 
-Blocking: (1) composite key unique and non-null; (2) each source reference has exactly one explicit state: linked/pending_review/quarantined/separate; (3) account-grain totals reconcile per currency and joint accounts are not duplicated in portfolio metrics; (4) all feature/evidence event times <= as_of_ts and contributing tables share the publish run; (5) protected/proxy fields absent from decision and semantic catalogs; (6) required types, consent enums and nonnegative counts pass. Warn on nulls in optional fields and freshness beyond the agreed SLA. Future/unknown timestamps are quarantined or excluded from temporal claims.
+1. Customer ID plus data-version ID must be present and unique. 2. Every source customer record must have a clear matching status. 3. Balances must agree with source accounts by currency; joint accounts must not be counted twice in bank-wide totals. 4. Dates must not be later than the snapshot, and facts must use the same data version. 5. Counts cannot be negative; protected fields cannot enter decisions.
 
-The pipeline records rule IDs, failures and denominators. A blocking failure stops the publish; the last passing run remains available with freshness shown. High match coverage does not prove identity accuracy: sample reviewed merges separately.
+A failed required check stops publication. Keep the last passing version available with its date. Missing optional fields are marked as missing, not guessed.
 
 
-### Allowed uses, refresh and change policy
+### Allowed uses and refresh frequency
 
-Allowed: assigned-customer servicing, reviewed agent assist and hardship referral, authorized aggregate insights, quality and identity monitoring. Prohibited: protected profiling, underwriting, marketing, autonomous customer-impacting actions and unapproved export/model training. Restricted evidence is available only to authorized reviewers.
+Allowed: assigned-customer servicing, reviewed agent assist and hardship referrals, approved totals and data-quality checks. Not allowed: protected profiling, marketing, lending decisions, automatic customer actions or unapproved export/model training.
 
-Hackathon refresh: on demand per organizer drop; fresh case state rechecked at approval. Proposed production refresh: daily full publish plus intraday contact/promise increments; exact cadence, retention, timezone/currency definitions and freshness thresholds TBC with owner. Breaking changes require a new contract version, approved mapping and rerun of consumer checks. Snapshot anchor: 28 Sep 2026 end-of-day, timezone TBC; windows (as_of_ts - N days, as_of_ts]. Later records are excluded/quarantined.
+Refresh during the hackathon whenever organizers provide new files. Proposed later refresh: daily customer views, with contact and payment-promise updates during the day. Final schedule and retention are TBC with the owner. Recheck current case permissions before approval. Changes to required fields need owner approval and a new contract version.

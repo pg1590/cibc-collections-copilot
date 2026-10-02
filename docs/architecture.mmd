@@ -1,34 +1,33 @@
 flowchart TB
-  SRC["Cards / loans / deposits / CRM / collections: CSV, yearly Parquet, JSON transcripts; mappings TBC; WAV excluded"]
+  SRC["Synthetic banking files: accounts, cases, contacts, promises and notes; source fields TBC"]
   subgraph L1["Layer 1: Data Product Factory"]
-    RAW["Immutable drops + manifest | Python / Polars"]
-    MAP["AI mapping suggestions -> HUMAN steward approval"]
-    ID["Approved exact identifiers (TBC) + RapidFuzz candidates -> HUMAN merge review"]
-    GOLD["Versioned crosswalk + quality gate -> C360 + field lineage + feature snapshot | CockroachDB"]
-    RAW --> MAP --> ID --> GOLD
+    LOAD["Import files, remove duplicates and check data | Python / Polars / DuckDB"]
+    MAP["AI suggests field mappings; HUMAN data reviewer approves"]
+    MATCH["Match customer IDs; HUMAN reviews uncertain matches"]
+    VIEW["One customer view (C360), with sources and dates | CockroachDB"]
+    LOAD --> MAP --> MATCH --> VIEW
   end
-  SRC --> RAW
-  subgraph L2["Layer 2: Insight and NLP"]
-    PLAN["AI question -> typed QueryPlan | Pydantic"]
-    SQL["Catalog validation + authorization -> parameterized SELECT | SQLAlchemy"]
-    ANS["Answer + understood filters + SQL + sources + publish run / refusal"]
-    PLAN --> SQL --> ANS
+  SRC --> LOAD
+  subgraph L2["Layer 2: Plain-English questions"]
+    QUESTION["AI understands question"]
+    CHECK["Server checks supported measures and user access"]
+    ANSWER["Approved read-only SQL query; show answer, SQL, source and date; refuse unsupported requests"]
+    QUESTION --> CHECK --> ANSWER
   end
-  subgraph L3["Layer 3: Grounded agent assist - ONE use case"]
-    EV["Scoped evidence + sanitized packets | BM25"]
-    BR["AI cue extraction -> validation -> policy rules -> templated cited brief; AI narrative optional"]
-    CHECK["Provenance checks + abstention -> HUMAN agent / specialist review"]
-    ACT["Fresh authorization/consent checks -> atomic audit + simulated outbox"]
-    EV --> BR --> CHECK --> ACT
+  subgraph L3["Layer 3: Agent assist - one use case"]
+    RECORDS["Read assigned customer's permitted records"]
+    BRIEF["AI finds possible hardship; fixed brief shows verified facts and sources"]
+    REVIEW["HUMAN agent reviews; separate specialist checks hardship referral"]
+    APPROVE["Recheck permissions, record approval and simulate action"]
+    RECORDS --> BRIEF --> REVIEW --> APPROVE
   end
-  GOLD --> SQL
-  GOLD --> EV
-  UI["Next.js console -> authenticated FastAPI modular service"] --> PLAN
-  UI --> EV
-  ANS --> UI
-  CHECK --> UI
-  ACT --> UI
-  GOV["Across all layers: least privilege, protected-feature exclusion, hardship uncertainty, monitoring and audit"]
+  VIEW --> CHECK
+  VIEW --> RECORDS
+  UI["Next.js user screen; FastAPI service; language model provider TBC"] --> QUESTION
+  UI --> RECORDS
+  ANSWER --> UI
+  REVIEW --> UI
+  GOV["All layers: access checks, no protected attributes, human review, action records and monitoring"]
   GOV -.-> L1
   GOV -.-> L2
   GOV -.-> L3

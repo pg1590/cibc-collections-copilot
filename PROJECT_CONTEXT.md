@@ -43,3 +43,6 @@ GitHub connector still reports repository push/admin permission, but an actual R
 
 ## SSH delivery completed — 2 October 2026
 Supervisor added the local Ed25519 public authentication key to GitHub. SSH authenticated as pg1590; `git ls-remote origin` confirmed an empty repository before the initial push. `git push -u origin main` succeeded, uploading reviewed tracked project files and local Git history. Sensitive source material and raw reviews were never tracked. The generated PDF and portable backups remain local. Use SSH for subsequent Git operations; the connector write failure has not been resolved or retested. Application implementation and organizer submission remain outside the current scope.
+
+## Plain-language revision — 2 October 2026
+Supervisor requested simpler wording and only necessary content. Rewrote submission-content.json, generated system-design.md and the architecture labels in plain English; removed extra design sections while retaining the nine required headings, one operational use case, controls and data-contract requirements. Increased body/table font sizes. Regenerated the six-page PDF and inspected all six pages; required names/headings and text-boundary checks pass. Detailed internal data-model/review documents remain supporting material. No application implementation or organizer submission occurred.

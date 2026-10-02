@@ -19,11 +19,11 @@ LIGHT = colors.HexColor('#F0F4F7')
 TEAL = colors.HexColor('#087E8B')
 GRAY = colors.HexColor('#556474')
 WIDTH = A4[0] - 78
-BODY = ParagraphStyle('body', fontName='Helvetica', fontSize=9.2, leading=12.1, textColor=NAVY, spaceAfter=6)
+BODY = ParagraphStyle('body', fontName='Helvetica', fontSize=10.3, leading=14, textColor=NAVY, spaceAfter=9)
 H1 = ParagraphStyle('title', fontName='Helvetica-Bold', fontSize=22, leading=26, textColor=NAVY, spaceAfter=12)
 H2 = ParagraphStyle('section', fontName='Helvetica-Bold', fontSize=11.3, leading=14, textColor=BURGUNDY, spaceBefore=6, spaceAfter=5)
-CELL = ParagraphStyle('cell', parent=BODY, fontSize=8.3, leading=10.6, spaceAfter=0)
-SMALL = ParagraphStyle('small', parent=BODY, fontSize=8.3, leading=11)
+CELL = ParagraphStyle('cell', parent=BODY, fontSize=9.3, leading=12.2, spaceAfter=0)
+SMALL = ParagraphStyle('small', parent=BODY, fontSize=9, leading=12)
 
 def para(text, style=BODY):
     return Paragraph(escape(text), style)
@@ -73,37 +73,37 @@ class Architecture(Flowable):
             path.close()
             c.drawPath(path, fill=1, stroke=0)
 
-        box(0, 485, w, 70, 'SYNTHETIC SOURCE DROPS', [
-            '~1M customers / ~1.84M accounts; CSV, yearly Parquet, JSON text',
-            'Snapshot: 28 Sep 2026. Target schema defined; source mappings TBC.'
+        box(0, 485, w, 70, 'INPUT | BANKING RECORDS', [
+            'Accounts, collection cases, contacts, payment promises and notes',
+            'Synthetic files; source fields TBC (to be confirmed).'
         ])
         arrow(w/2, 485, w/2, 468)
         box(0, 337, w, 130, 'LAYER 1 | DATA PRODUCT FACTORY', [
-            'Python / Polars / DuckDB: immutable raw -> typed, grain-safe curated data',
-            'AI: mapping suggestions -> HUMAN: steward approves configuration',
-            'Key matching + RapidFuzz candidates -> HUMAN: ambiguous merge review',
-            'CockroachDB: crosswalk + DQ gate -> C360 / lineage / feature snapshots'
+            'Python / Polars / DuckDB: import files, remove duplicates and check data',
+            'AI suggests field mappings; a HUMAN data reviewer approves them',
+            'Match customer IDs; a HUMAN reviews uncertain matches',
+            'CockroachDB stores C360: one customer view with sources and dates'
         ])
         gap = 15
         col = (w-gap)/2
         arrow(w/2, 337, col/2, 311)
         arrow(w/2, 337, col+gap+col/2, 311)
-        box(0, 114, col, 196, 'LAYER 2 | INSIGHT & NLP', [
-            'AI: question -> typed plan (Pydantic)',
-            'Catalog + server authorization -> SQLAlchemy parameterized SELECT',
-            'Read-only, scoped CockroachDB query; one completed publish run',
-            'Answer + SQL + sources + freshness; unsupported requests refused'
+        box(0, 114, col, 196, 'LAYER 2 | QUESTIONS', [
+            'AI understands the plain-English question',
+            'Server checks supported measures and user access',
+            'Approved read-only database query (SQL)',
+            'Show answer, SQL, source and date; refuse unsupported requests'
         ])
         box(col+gap, 114, col, 196, 'LAYER 3 | AGENT ASSIST', [
-            'Scoped evidence -> sanitized packets (BM25)',
-            'AI: cue extraction -> validation -> rules -> template + citations',
-            'HUMAN: agent and separate hardship specialist review',
-            'Fresh checks -> approval + audit + simulated outbox'
+            'Read only the assigned customer\'s permitted records',
+            'AI finds possible financial hardship; a fixed brief shows facts and sources',
+            'HUMAN: agent reviews; specialist checks hardship referral',
+            'Recheck permissions, record approval and simulate the action'
         ])
         box(0, 48, w, 54, 'GOVERNANCE ACROSS ALL THREE LAYERS', [
-            'Least privilege | Protected-feature exclusion | Hardship review | Audit | Monitoring'
+            'Access checks | No protected attributes | Human review | Action records | Monitoring'
         ], fill=colors.HexColor('#FFF3F6'), border=BURGUNDY)
-        text(0, 37, w, 'Next.js agent console -> authenticated FastAPI service. AI proposes; rules constrain; humans approve. External LLM provider/permission TBC. No real customer sends.', size=8.4)
+        text(0, 37, w, 'Next.js: user screen. FastAPI: service. Language model provider TBC. AI suggests; people approve. No real customer actions.', size=9)
 
 def make_table(t):
     rows = [[para(v, CELL) for v in t['headers']]]
@@ -132,12 +132,12 @@ def page_frame(c, doc):
     c.setStrokeColor(colors.HexColor('#D7DFE6'))
     c.line(39,37,A4[0]-39,37)
     c.setFont('Helvetica',7)
-    c.drawString(39,25,'Design draft | 02 Oct 2026 | Proposed schemas; source mappings TBC')
+    c.drawString(39,25,'Design draft | 02 Oct 2026 | Source fields TBC (to be confirmed)')
     c.drawRightString(A4[0]-39,25,f'{doc.page} / 6')
     c.restoreState()
 
 def markdown(d):
-    lines=[f'# {d["title"]} — {d["team"]}', '', 'Members: '+', '.join(d['members']), '', d['subtitle'], '', 'Architecture: [architecture.mmd](architecture.mmd)', '', 'Source mappings remain TBC; this is a proposed design, not an implementation.']
+    lines=[f'# {d["title"]} — {d["team"]}', '', 'Members: '+', '.join(d['members']), '', d['subtitle'], '', 'Architecture: [architecture.mmd](architecture.mmd)', '', 'Source fields remain TBC (to be confirmed). This is a design; it has not been built yet.']
     for page in d['pages']:
         lines += ['', '---', '', '## '+page['title']]
         for s in page['sections']:
@@ -152,6 +152,7 @@ def markdown(d):
 def main():
     d=json.loads((ROOT/'docs/submission-content.json').read_text())
     out=ROOT/'submission'/f'{d["team"]}_SystemDesign.pdf'
+    out.parent.mkdir(parents=True, exist_ok=True)
     story=[para(d['title'],H1),para(d['subtitle'],BODY),para('TEAM: '+d['team'],H2),para('MEMBERS: '+', '.join(d['members']),SMALL),Spacer(1,5),Architecture()]
     for page in d['pages']:
         story += [PageBreak(),para(page['title'],H1)]
@@ -171,7 +172,7 @@ def main():
     joined='\n'.join(texts)
     for heading in ['Summary','Business value','Layer 1','Layer 2','Layer 3','AI usage','Scalability','Governance','Build plan']:
         assert heading in joined,f'Missing heading: {heading}'
-    assert 'Quality rules' in texts[-1] and 'Business owner' in texts[-1]
+    assert 'Quality rules' in texts[-1] and 'Owner:' in texts[-1]
     (ROOT/'docs/system-design.md').write_text(markdown(d))
     print(f'{out}\nVerified six pages, required headings and page-one names. Visual QA still required.')
 
