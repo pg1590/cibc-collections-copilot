@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.venv/
+__pycache__/
+node_modules/
+data/
+docs/sources/*.txt
+docs/reviews/claude-*
+prompts/
+submission/previews/
+submission/*.pdf
+submission/*.png
+.DS_Store

@@ -1,0 +1,34 @@
+flowchart TB
+  SRC["Cards / loans / deposits / CRM / collections: CSV, yearly Parquet, JSON transcripts; mappings TBC; WAV excluded"]
+  subgraph L1["Layer 1: Data Product Factory"]
+    RAW["Immutable drops + manifest | Python / Polars"]
+    MAP["AI mapping suggestions -> HUMAN steward approval"]
+    ID["Approved exact identifiers (TBC) + RapidFuzz candidates -> HUMAN merge review"]
+    GOLD["Versioned crosswalk + quality gate -> C360 + field lineage + feature snapshot | CockroachDB"]
+    RAW --> MAP --> ID --> GOLD
+  end
+  SRC --> RAW
+  subgraph L2["Layer 2: Insight and NLP"]
+    PLAN["AI question -> typed QueryPlan | Pydantic"]
+    SQL["Catalog validation + authorization -> parameterized SELECT | SQLAlchemy"]
+    ANS["Answer + understood filters + SQL + sources + publish run / refusal"]
+    PLAN --> SQL --> ANS
+  end
+  subgraph L3["Layer 3: Grounded agent assist - ONE use case"]
+    EV["Scoped evidence + sanitized packets | BM25"]
+    BR["AI cue extraction -> validation -> policy rules -> templated cited brief; AI narrative optional"]
+    CHECK["Provenance checks + abstention -> HUMAN agent / specialist review"]
+    ACT["Fresh authorization/consent checks -> atomic audit + simulated outbox"]
+    EV --> BR --> CHECK --> ACT
+  end
+  GOLD --> SQL
+  GOLD --> EV
+  UI["Next.js console -> authenticated FastAPI modular service"] --> PLAN
+  UI --> EV
+  ANS --> UI
+  CHECK --> UI
+  ACT --> UI
+  GOV["Across all layers: least privilege, protected-feature exclusion, hardship uncertainty, monitoring and audit"]
+  GOV -.-> L1
+  GOV -.-> L2
+  GOV -.-> L3

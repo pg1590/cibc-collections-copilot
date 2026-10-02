@@ -1,0 +1,16 @@
+erDiagram
+  GOLDEN_CUSTOMER ||--o{ CROSSWALK : resolves
+  GOLDEN_CUSTOMER ||--o{ ACCOUNT_HOLDER : owns
+  ACCOUNT ||--o{ ACCOUNT_HOLDER : has
+  GOLDEN_CUSTOMER ||--o{ COLLECTION_CASE : has
+  COLLECTION_CASE ||--o{ CONTACT_EVENT : records
+  COLLECTION_CASE ||--o{ PROMISE : records
+  PUBLISH_RUN ||--o{ C360_CUSTOMER : publishes
+  GOLDEN_CUSTOMER ||--o{ C360_CUSTOMER : versions
+  C360_GOLDEN_CUSTOMER ||--o{ C360_EXPOSURE : has_credit_only
+  PUBLISH_RUN ||--o{ EVIDENCE_ITEM : versions
+  GOLDEN_CUSTOMER ||--o{ EVIDENCE_ITEM : scopes
+  COLLECTION_CASE ||--o{ ASSIST_DRAFT : generates
+  ASSIST_DRAFT ||--o{ APPROVAL : requires
+  ASSIST_DRAFT ||--o{ HARDSHIP_REVIEW : reviewed_by_specialist
+  APPROVAL ||--o{ AUDIT_OUTBOX : records_atomically
