@@ -34,3 +34,6 @@ Supervisor authorizes target tables, columns and relationships to be designed by
 
 ## Remote state
 Canonical repo: pg1590/cibc-collections-copilot. Connector reports push/admin permission after supervisor made it public. Reviewed project files may be uploaded; confidential source PDFs/extracts and raw model responses remain local.
+
+## Remote write blocker
+Actual README upload failed with connector 403; local SSH keys are not accepted by GitHub. Remote remains empty/public. No data or project files uploaded. Resolve repository-app installation/authenticated Git access before attempting push; source-material exclusions continue to apply.

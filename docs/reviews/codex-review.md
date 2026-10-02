@@ -25,3 +25,5 @@ The final Opus review suggested approving fuzzy score bands after sampled calibr
 
 ## Artifact validation
 The generator checks six pages, all nine required design headings, contract owner/rules and all five team/member names on page 1. Poppler page renders are inspected locally before delivery. These are artifact checks, not application tests; application development has not started.
+
+Final visual QA: all six rendered pages inspected. Poppler text bounds keep body text above the footer (maximum body bottom 777.8 pt vs 795 pt bound). Required-heading/member/page checks pass; git diff whitespace check passes. No application tests are claimed.

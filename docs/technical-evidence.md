@@ -11,3 +11,6 @@ These sources establish product behavior, not an implemented or connected system
 - Feature Dev loaded by explicit session directory. Its full workflow assumes an existing codebase; initial task uses its architect capability directly.
 - CockroachDB: no plugin found by Codex's plugin-management search and no Claude MCP servers configured. No database or cloud account provisioned. More plugins may exist in the plugin directory: https://chatgpt.com/plugins.
 - GitHub: supervisor created pg1590/cibc-collections-copilot and made it public to enable access. Connector now reports push/admin permission. Confidential source extracts, raw Claude outputs and credentials stay local. Public visibility remains the supervisor's change.
+
+## Actual write verification
+A README bootstrap write returned HTTP 403 (Resource not accessible by integration), despite reported push/admin metadata. Existing SSH authentication was also rejected by GitHub (publickey). The remote is still empty; local repo and reviewed artifact are saved.

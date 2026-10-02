@@ -36,3 +36,7 @@ The user supervises. Codex coordinates, verifies and consolidates; Claude Opus 5
 ## Status
 
 The supervisor made the GitHub repository public to enable access; original preference was private. Confidential source documents remain local. CockroachDB is proposed, but no CockroachDB plugin connection or database provisioning is established. Data dictionary overview is available; the team has defined its target schema, and incoming field mappings will be confirmed from the dataset. Organizer submission is not performed by this repository setup.
+
+## Verified delivery state
+
+The six-page PDF has passed page-count, heading, member-name, text-boundary and visual checks. Local Git history is saved. Remote upload attempted through the connector failed with `403 Resource not accessible by integration`; SSH authentication failed with `Permission denied (publickey)`. Repository permission metadata does not establish effective integration write access. Nothing was uploaded. A working GitHub repository-app installation for pg1590 or authenticated Git credentials is needed before pushing.
