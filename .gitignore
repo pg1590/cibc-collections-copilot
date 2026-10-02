@@ -13,4 +13,6 @@ prompts/
 submission/previews/
 submission/*.pdf
 submission/*.png
+submission/*.zip
+submission/*.bundle
 .DS_Store
