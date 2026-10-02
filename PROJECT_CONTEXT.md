@@ -37,3 +37,6 @@ Canonical repo: pg1590/cibc-collections-copilot. Connector reports push/admin pe
 
 ## Remote write blocker
 Actual README upload failed with connector 403; local SSH keys are not accepted by GitHub. Remote remains empty/public. No data or project files uploaded. Resolve repository-app installation/authenticated Git access before attempting push; source-material exclusions continue to apply.
+
+## Resume check — 2 October 2026
+GitHub connector still reports repository push/admin permission, but an actual README create retry returned 403 `Resource not accessible by integration`. Repository contents returned 404 `This repository is empty`. Connector installation listing includes two other accounts, with no pg1590 installation visible. This points to missing repository-app installation access; permission metadata alone is insufficient. No GitHub CLI is installed locally. The six-page PDF and portable backups remain available; application implementation and organizer submission still await supervisor instructions.

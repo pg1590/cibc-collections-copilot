@@ -14,3 +14,5 @@ These sources establish product behavior, not an implemented or connected system
 
 ## Actual write verification
 A README bootstrap write returned HTTP 403 (Resource not accessible by integration), despite reported push/admin metadata. Existing SSH authentication was also rejected by GitHub (publickey). The remote is still empty; local repo and reviewed artifact are saved.
+
+Resume verification on 2 October 2026: the README create retry again returned 403, and the repository contents endpoint confirmed that the repository is empty. The connector lists installations for two other accounts, but none for pg1590. A missing pg1590 repository-app installation is the likely cause; this is an inference from the installation listing, not proof of the complete authorization configuration. Enable the connected GitHub App on pg1590 with access to cibc-collections-copilot and repository contents write permission, then retry the reviewed-files upload. No GitHub CLI is installed locally.
