@@ -79,31 +79,31 @@ class Architecture(Flowable):
         ])
         arrow(w/2, 485, w/2, 468)
         box(0, 337, w, 130, 'LAYER 1 | DATA PRODUCT FACTORY', [
-            'Python / Polars / DuckDB: import files, remove duplicates and check data',
-            'AI suggests field mappings; a HUMAN data reviewer approves them',
-            'Match customer IDs; a HUMAN reviews uncertain matches',
-            'CockroachDB stores C360: one customer view with sources and dates'
+            'ETL pipeline | Python / Polars / DuckDB: ingest, deduplicate and validate',
+            'AI suggests schema mappings; a HUMAN data steward approves',
+            'Entity resolution | exact links + RapidFuzz suggestions; HUMAN merge review',
+            'CockroachDB: Customer 360 (C360), versioned ID links and data lineage'
         ])
         gap = 15
         col = (w-gap)/2
         arrow(w/2, 337, col/2, 311)
         arrow(w/2, 337, col+gap+col/2, 311)
-        box(0, 114, col, 196, 'LAYER 2 | QUESTIONS', [
-            'AI understands the plain-English question',
-            'Server checks supported measures and user access',
-            'Approved read-only database query (SQL)',
-            'Show answer, SQL, source and date; refuse unsupported requests'
+        box(0, 114, col, 196, 'LAYER 2 | INSIGHT & NLP', [
+            'LLM converts question into a structured query plan',
+            'Pydantic validation + backend authorization',
+            'SQLAlchemy: parameterized, read-only SQL on approved metrics',
+            'Answer + SQL + sources + freshness; refuse unsupported requests'
         ])
         box(col+gap, 114, col, 196, 'LAYER 3 | AGENT ASSIST', [
-            'Read only the assigned customer\'s permitted records',
-            'AI finds possible financial hardship; a fixed brief shows facts and sources',
-            'HUMAN: agent reviews; specialist checks hardship referral',
-            'Recheck permissions, record approval and simulate the action'
+            'Authorized evidence retrieval | BM25 ranking + recency',
+            'LLM extracts hardship cues; template brief shows verified facts + citations',
+            'HUMAN: agent reviews; specialist approves hardship referral',
+            'Revalidate permissions -> approval transaction + audit; simulated action'
         ])
         box(0, 48, w, 54, 'GOVERNANCE ACROSS ALL THREE LAYERS', [
-            'Access checks | No protected attributes | Human review | Action records | Monitoring'
+            'Role-based access | Protected-attribute exclusion | Human review | Audit | Monitoring'
         ], fill=colors.HexColor('#FFF3F6'), border=BURGUNDY)
-        text(0, 37, w, 'Next.js: user screen. FastAPI: service. Language model provider TBC. AI suggests; people approve. No real customer actions.', size=9)
+        text(0, 37, w, 'Next.js frontend -> FastAPI backend. LLM = large language model; provider TBC. AI proposes; humans approve. No real customer actions.', size=9)
 
 def make_table(t):
     rows = [[para(v, CELL) for v in t['headers']]]

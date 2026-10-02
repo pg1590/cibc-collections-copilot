@@ -1,33 +1,34 @@
 flowchart TB
-  SRC["Synthetic banking files: accounts, cases, contacts, promises and notes; source fields TBC"]
+  SRC["Synthetic banking files: accounts, cases, contacts, promises and notes; source mappings TBC"]
   subgraph L1["Layer 1: Data Product Factory"]
-    LOAD["Import files, remove duplicates and check data | Python / Polars / DuckDB"]
-    MAP["AI suggests field mappings; HUMAN data reviewer approves"]
-    MATCH["Match customer IDs; HUMAN reviews uncertain matches"]
-    VIEW["One customer view (C360), with sources and dates | CockroachDB"]
-    LOAD --> MAP --> MATCH --> VIEW
+    ETL["ETL: ingest, deduplicate and validate | Python / Polars / DuckDB"]
+    MAP["AI schema-mapping suggestions -> HUMAN steward approval"]
+    ID["Entity resolution: exact links + RapidFuzz candidates -> HUMAN merge review"]
+    C360["Customer 360, versioned ID crosswalk and data lineage | CockroachDB"]
+    ETL --> MAP --> ID --> C360
   end
-  SRC --> LOAD
-  subgraph L2["Layer 2: Plain-English questions"]
-    QUESTION["AI understands question"]
-    CHECK["Server checks supported measures and user access"]
-    ANSWER["Approved read-only SQL query; show answer, SQL, source and date; refuse unsupported requests"]
-    QUESTION --> CHECK --> ANSWER
+  SRC --> ETL
+  subgraph L2["Layer 2: Insight and NLP"]
+    PLAN["LLM -> structured query plan"]
+    VALIDATE["Pydantic validation + backend authorization"]
+    SQL["Parameterized read-only SQL | SQLAlchemy"]
+    ANSWER["Answer + SQL + sources + freshness / refusal"]
+    PLAN --> VALIDATE --> SQL --> ANSWER
   end
-  subgraph L3["Layer 3: Agent assist - one use case"]
-    RECORDS["Read assigned customer's permitted records"]
-    BRIEF["AI finds possible hardship; fixed brief shows verified facts and sources"]
-    REVIEW["HUMAN agent reviews; separate specialist checks hardship referral"]
-    APPROVE["Recheck permissions, record approval and simulate action"]
-    RECORDS --> BRIEF --> REVIEW --> APPROVE
+  subgraph L3["Layer 3: Agent assist - one operational AI use case"]
+    RETRIEVE["Authorized evidence retrieval | BM25 + recency"]
+    BRIEF["LLM hardship-cue extraction -> verified template brief + citations"]
+    REVIEW["HUMAN agent review + separate specialist referral approval"]
+    APPROVE["Revalidate permissions -> approval transaction + audit; simulated action"]
+    RETRIEVE --> BRIEF --> REVIEW --> APPROVE
   end
-  VIEW --> CHECK
-  VIEW --> RECORDS
-  UI["Next.js user screen; FastAPI service; language model provider TBC"] --> QUESTION
-  UI --> RECORDS
+  C360 --> SQL
+  C360 --> RETRIEVE
+  UI["Next.js frontend -> FastAPI backend; LLM provider TBC"] --> PLAN
+  UI --> RETRIEVE
   ANSWER --> UI
   REVIEW --> UI
-  GOV["All layers: access checks, no protected attributes, human review, action records and monitoring"]
+  GOV["All layers: role-based access, protected-attribute exclusion, human review, audit and monitoring"]
   GOV -.-> L1
   GOV -.-> L2
   GOV -.-> L3
