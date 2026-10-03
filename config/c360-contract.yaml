@@ -1,0 +1,53 @@
+contract_id: DC-C360-001
+version: 1.0.0
+owner: Adda Wale
+snapshot_date: '2026-09-28'
+refresh: manual reproducible snapshot build
+product: gold.customer_summary
+primary_key: customer_id
+source_authority:
+  release: Maple Bank synthetic collections release
+  schema: schema/schema.json
+  conventions: README.md
+  base_contact_contract: DC-COLL-001 v1.0
+columns:
+  customer_id: {type: string, nullable: false, unique: true, description: Verified canonical CRM reference}
+  name: {type: string, nullable: true, description: Canonical CRM first and last name}
+  province: {type: string, nullable: true, source: customers.province_code}
+  preferred_language: {type: string, nullable: true, source: customers.preferred_language}
+  open_cases: {type: integer, nullable: false, minimum: 0}
+  total_overdue: {type: number, nullable: false, unit: CAD, description: Sum overdue on open cases}
+  max_dpd: {type: integer, nullable: true, description: Maximum open-case DPD; null if no open case}
+  identity_confidence: {type: number, nullable: true, description: Lowest accepted source match rule score; not a calibrated probability}
+identity:
+  systems: [crm, cards, lending, core, collections, bureau]
+  identifier_type: string
+  preserve_leading_zeros: true
+  duplicate_rule: Declared CRM duplicate requires agreeing DOB and independent name or phone evidence
+  cross_source_rule: DOB plus agreeing phone/name/postal evidence and a unique candidate margin
+  auto_match_minimum: 0.97
+  ambiguous_action: review; exclude from linked account balances
+  unmatched_action: preserve source and report counts
+quality:
+  csv_null_marker: empty field only
+  literal_tokens_preserved: [NA, N/A, na]
+  raw_rows: immutable release files exposed as raw views
+  curated_rows: typed rows; unparseable nonempty values become null and are counted
+  source_keys: checked for uniqueness and nulls
+  contact_case_foreign_key: measured orphan count; original source tolerance below 1 percent
+  validation: eager Pandera on every feature-store customer key, case count and overdue value
+  report: docs/data-quality-report.md
+allowed_uses: [collections operations, aggregate analytics, review assistance]
+disallowed_uses: [marketing, bulk PII export, protected-attribute decisions, automatic customer contact]
+access:
+  agent: assigned cases only
+  analyst: portfolio analytics and C360
+  supervisor: C360, review decisions and audit
+protected_fields:
+  policy: restricted fairness evaluation only; excluded from classifier and serving feature vectors
+  fields: [gender, marital_status, citizenship, household, newcomer, accessibility, vulnerability, accent]
+lineage:
+  crosswalk: gold.identity_crosswalk
+  case_source: curated.collections_cases
+  account_source: accepted matches from card_accounts, loan_accounts, deposit_accounts
+  financial_text_source: latest agent note at or before snapshot

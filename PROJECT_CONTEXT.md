@@ -1,5 +1,18 @@
 # CIBC Collections Hackathon
 
+## Active implementation — 3 October 2026 (overrides historical entries below)
+At 12:10 IST the four-layer application is implemented. All 35 benchmark rows generate with six refusals and no unresolved results; all 12 numeric dev SQL references match within tolerance. Nineteen tests pass; frontend TypeScript/lint/production build pass; real-data HTTP smoke check passes model brief, supervisor edit and audit. Architecture PDF/PNG generated and visually inspected. C360 contract and counted DQ report present. Remaining: browser visual review (connector unavailable), demo video/pitch deck, future extra questions and organizer access/submission. No paid runtime calls. The Claude insight attempt timed out without files; Codex owns that completed module and validation now.
+
+The supervisor approved the combined plan with "lets cook". Implementation is authorized; deployment, organizer submission and invitations are not. Runtime paid API calls are deferred: the supervisor will configure a key locally later. Actual Claude Opus 5.5 high-effort engineering collaboration is authorized separately.
+
+Main release downloaded and all 26,358 ZIP members extracted with CRC checks. Internal README, schema, DATA_DICTIONARY.xlsx (Tables, Columns, Relationships), metric definitions, policies, public labels and all 35 released benchmark questions inspected. Physical mappings now derive from release schema and actual headers. The latest snapshot is 2026-09-28. CSV nulls are empty-only; IDs remain strings. Dates require normalization, source keys differ, source loans have no account_status column, and contact_history channel changes to channel_v2 late September. Current hardship policy is POL-COLL-004 v4.2; older v4.1 terms are superseded.
+
+Code stack: DuckDB source curation/C360, Polars/Pandera feature validation, SQLite reviews/audit, FastAPI, Next.js/shadcn. Local financial-cue classifier trains on 500 public note labels (354 none, 106 clear, 40 possible), with a customer-grouped heldout split and majority baseline. Restricted fairness fields are evaluation-only; classifier receives only explicit financial binary cues. No raw free-text embedding or protected attributes enter the classifier. Feature Store uses one versioned builder offline and online and measures parity. Actual model results must be read from generated report, not invented.
+
+File ownership during build: Codex owns data pipeline, API, feature/model, API security tests; Claude insight run owns app/insights.py, scripts/run_benchmark.py and tests/test_insights.py; Claude frontend run owns frontend and its review notes. Frontend source completed; compilation/integration is now Codex responsibility. Raw outputs and all data remain ignored. Seven API/financial-feature security tests passed outside sandbox (async test client local sockets blocked inside sandbox). Do not concurrently edit the insight files before that Claude run ends.
+
+Local authenticated SSH continues to reach pg1590 repo; unauthenticated API404 is consistent with private visibility, owner setting confirmation remains needed. Organizer identities and future extra questions are outstanding. Do not submit or deploy.
+
 ## Current phase — 3 October 2026
 Supervisor confirms selection in the top 50 and requests analysis of the build instructions plus a proposed action plan. Application implementation and organizer submission have not been authorized by this planning request.
 

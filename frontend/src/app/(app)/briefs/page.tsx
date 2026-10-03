@@ -1,0 +1,244 @@
+"use client";
+
+import Link from "next/link";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { ArrowRight, Cpu, Hourglass, Loader2, Sparkles } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
+import { KeyValueList } from "@/components/record-table";
+import { RoleGate } from "@/components/role-gate";
+import { SourceList } from "@/components/source-list";
+import { EmptyState, ErrorState } from "@/components/states";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { api, errorMessage } from "@/lib/api";
+import type { Brief } from "@/lib/types";
+import { displayValue } from "@/lib/utils";
+
+function BriefView({ brief }: { brief: Brief }) {
+  return (
+    <div className="space-y-6">
+      <Alert variant="review">
+        <Hourglass aria-hidden />
+        <AlertTitle>Waiting for supervisor review</AlertTitle>
+        <AlertDescription>
+          <p>
+            This brief is a draft (status: <strong>{brief.status}</strong>). It is not sent to anyone. A supervisor must
+            approve, edit or reject it, with a reason.
+          </p>
+        </AlertDescription>
+      </Alert>
+
+      <Card>
+        <CardHeader>
+          <CardDescription>
+            Brief <span className="font-mono">{brief.brief_id}</span> · customer{" "}
+            <Link className="font-mono underline underline-offset-4" href={`/customers/${encodeURIComponent(brief.customer_id)}`}>
+              {brief.customer_id}
+            </Link>
+          </CardDescription>
+          <CardTitle className="text-lg">Summary</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <p className="leading-relaxed whitespace-pre-line">{brief.summary}</p>
+          <div className="bg-accent/50 rounded-lg border border-primary/15 p-4">
+            <h3 className="text-accent-foreground mb-1 text-sm font-semibold">Recommended next step</h3>
+            <p className="leading-relaxed whitespace-pre-line">{brief.recommendation}</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Signals and evidence</CardTitle>
+          <CardDescription>Each signal the brief relies on, with the record it came from.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {brief.signals.length ? (
+            <div className="rounded-lg border">
+              <Table>
+                <caption className="sr-only">Signals</caption>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead scope="col">Signal</TableHead>
+                    <TableHead scope="col">Value</TableHead>
+                    <TableHead scope="col">Evidence</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {brief.signals.map((s, i) => (
+                    <TableRow key={`${s.name}-${i}`}>
+                      <TableCell className="align-top font-medium">{s.name}</TableCell>
+                      <TableCell className="align-top">{displayValue(s.value)}</TableCell>
+                      <TableCell className="text-muted-foreground max-w-[32rem] align-top break-words">
+                        {displayValue(s.evidence)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <EmptyState title="No signals returned" />
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Draft message</CardTitle>
+            <CardDescription>Read-only here. Supervisors can edit it during review.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Label htmlFor="brief-draft" className="sr-only">
+              Draft message
+            </Label>
+            <Textarea id="brief-draft" readOnly value={brief.draft} className="bg-muted/40 min-h-40 leading-relaxed" />
+          </CardContent>
+        </Card>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Cpu className="text-muted-foreground size-4" aria-hidden /> Model
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <dl className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <dt className="text-muted-foreground text-xs uppercase">Name</dt>
+                  <dd className="font-medium break-words">{brief.model.name}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground text-xs uppercase">Version</dt>
+                  <dd className="font-medium break-words">{brief.model.version}</dd>
+                </div>
+              </dl>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Policy sources</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <SourceList sources={brief.policy_sources} empty="No policy sources cited." />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Features used</CardTitle>
+          <CardDescription>Feature-store values at generation time. Protected attributes are excluded.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <KeyValueList data={brief.features} emptyTitle="No features returned" />
+        </CardContent>
+      </Card>
+
+      <Button asChild variant="outline">
+        <Link href="/reviews">
+          Go to review queue <ArrowRight aria-hidden />
+        </Link>
+      </Button>
+    </div>
+  );
+}
+
+function BriefWorkspace() {
+  const params = useSearchParams();
+  const initial = params.get("customer") ?? "";
+  const [customerId, setCustomerId] = useState(initial);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [brief, setBrief] = useState<Brief | null>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setCustomerId(initial), [initial]);
+
+  async function generate(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const id = customerId.trim();
+    if (!id) return;
+    setPending(true);
+    setError(null);
+    setBrief(null);
+    try {
+      const result = await api<Brief>("/briefs", { method: "POST", body: JSON.stringify({ customer_id: id }) });
+      setBrief(result);
+      requestAnimationFrame(() => resultRef.current?.focus());
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <>
+      <Card className="mb-8">
+        <CardContent>
+          <form onSubmit={generate} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="brief-customer">Customer ID</Label>
+              <Input
+                id="brief-customer"
+                required
+                autoComplete="off"
+                className="font-mono"
+                placeholder="Golden customer ID"
+                value={customerId}
+                onChange={(e) => setCustomerId(e.target.value)}
+              />
+            </div>
+            <Button type="submit" disabled={pending || !customerId.trim()}>
+              {pending ? <Loader2 className="animate-spin" aria-hidden /> : <Sparkles aria-hidden />}
+              {pending ? "Preparing…" : "Prepare brief"}
+            </Button>
+          </form>
+          <p className="text-muted-foreground mt-3 text-xs">
+            Find IDs on the{" "}
+            <Link href="/customers" className="underline underline-offset-4">
+              Customers
+            </Link>{" "}
+            page. Agents can only prepare briefs for customers on their assigned cases.
+          </p>
+        </CardContent>
+      </Card>
+
+      <div ref={resultRef} tabIndex={-1} aria-live="polite" className="outline-none">
+        {error && <ErrorState title="Brief not created" message={error} />}
+        {brief && <BriefView brief={brief} />}
+        {!brief && !error && !pending && (
+          <EmptyState
+            title="No brief yet"
+            description="Enter a customer ID to prepare a call brief: a summary, the evidence behind it, a recommended next step and a draft message."
+          />
+        )}
+      </div>
+    </>
+  );
+}
+
+export default function BriefsPage() {
+  return (
+    <>
+      <PageHeader
+        title="Agent brief"
+        description="Prepare a call brief for one customer. The model only drafts; a supervisor reviews every draft before it can be used."
+      />
+      <RoleGate section="briefs">
+        <Suspense fallback={null}>
+          <BriefWorkspace />
+        </Suspense>
+      </RoleGate>
+    </>
+  );
+}

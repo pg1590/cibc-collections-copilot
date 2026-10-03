@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Palette: warm off-white surfaces, dark navy text and chrome, teal for
+   primary actions, restrained coral only for items awaiting human review. */
+:root {
+  --radius: 0.625rem;
+  --background: #faf8f4;
+  --foreground: #13213a;
+  --card: #fffdf9;
+  --card-foreground: #13213a;
+  --popover: #fffdf9;
+  --popover-foreground: #13213a;
+  --primary: #0f6e66;
+  --primary-foreground: #f7fbfa;
+  --secondary: #efeae2;
+  --secondary-foreground: #13213a;
+  --muted: #f2eee7;
+  --muted-foreground: #5b6474;
+  --accent: #e3f0ee;
+  --accent-foreground: #0b4f49;
+  --destructive: #b42318;
+  --destructive-foreground: #fff8f6;
+  --review: #d9614a;
+  --review-soft: #fbe9e4;
+  --review-foreground: #8f3524;
+  --success: #1f7a4d;
+  --success-soft: #e4f2ea;
+  --border: #e4ddd2;
+  --input: #d9d1c4;
+  --ring: #0f6e66;
+  --sidebar: #13213a;
+  --sidebar-foreground: #e9e5dd;
+  --sidebar-muted: #9aa5b8;
+  --sidebar-accent: #1d2e4d;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-review: var(--review);
+  --color-review-soft: var(--review-soft);
+  --color-review-foreground: var(--review-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  h1, h2, h3 {
+    letter-spacing: -0.015em;
+  }
+}
