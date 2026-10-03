@@ -4,7 +4,7 @@ A proposed system for the CIBC Collections Hackathon: trusted Customer 360, gove
 
 Team: Prakhar Gupta, Aryan Shrivastava, Krish Agarwal and Ved Maurya.
 
-**Current phase: system design.** No application or database has been implemented or provisioned. This repository records a reviewable design, not measured results or a production system.
+**Current phase: build planning after top-50 selection.** No application or database has been implemented or provisioned. This repository records the submitted design and reviewed build plan, not measured results or a production system.
 
 ## Design
 
@@ -14,6 +14,7 @@ Team: Prakhar Gupta, Aryan Shrivastava, Krish Agarwal and Ved Maurya.
 - [Submission requirements](docs/requirements.md)
 - [Independent review and decisions](docs/reviews/codex-review.md)
 - [Technical references and integration state](docs/technical-evidence.md)
+- [Combined Codex and Claude build-plan review](docs/reviews/build-plan-review.md)
 
 The local submission draft is `submission/Adda Wale_SystemDesign.pdf`: one architecture page, four design pages and a one-page data contract. The source JSON and renderer reproduce it. All data-source field mappings stay TBC until the incoming dataset is profiled.
 

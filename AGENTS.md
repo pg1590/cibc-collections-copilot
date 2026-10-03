@@ -2,7 +2,7 @@
 
 The user is the supervisor. Codex coordinates delivery, independently checks Claude's proposals, and owns the consolidated design. Claude is a collaborating architect and engineer, explicitly requested as Opus 5.5 with high effort. Verify actual model metadata; never silently substitute.
 
-Current scope: build-phase analysis and planning after top-50 selection. Do not start application implementation or submit to the organizers until instructed. Preserve the source documents. The build instructions require a private GitHub repository; the existing remote is currently public and needs a visibility change before build delivery. Do not publish credentials, raw datasets, or customer data.
+Current scope: build-phase analysis and planning after top-50 selection. Do not start application implementation or submit to the organizers until instructed. Preserve the source documents. The build instructions require a private GitHub repository. The public API/connector now return 404 while authenticated SSH still works, consistent with private visibility; confirm visibility through the owner's settings before delivery. Use SSH for Git access. Do not publish credentials, raw datasets, or customer data.
 
 Primary build requirements: docs/sources/build-phase-instructions.txt. The design-phase statement at docs/sources/problem-statement.txt and older challenge brief are historical context. The dataset's internal README, dictionary, metric definitions and benchmark templates must be inspected before source mappings are confirmed. Unconfirmed source fields MUST be marked TBC. Distinguish proposed output schema from actual source field names. Do not invent benchmark results or claim a measured business uplift.
 
