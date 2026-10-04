@@ -100,6 +100,7 @@ export interface Brief {
   recommendation: string;
   policy_sources: unknown[];
   draft: string;
+  contact_hold: boolean;
   status: string;
   model: { name: string; version: string };
   features: ApiRecord;
@@ -118,6 +119,7 @@ export interface ReviewItem {
   summary_evidence?: string;
   recommendation: string;
   draft: string;
+  contact_hold?: boolean;
   status: string;
   created_at: string;
   decision: Decision | null;

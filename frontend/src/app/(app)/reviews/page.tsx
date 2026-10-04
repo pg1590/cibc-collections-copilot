@@ -105,7 +105,7 @@ function DecisionForm({ item, onDone }: { item: ReviewItem; onDone: (updated: Re
 
       {decision === "edit" && (
         <div className="space-y-2">
-          <Label htmlFor={`${uid}-draft`}>Edited draft</Label>
+          <Label htmlFor={`${uid}-draft`}>{item.contact_hold ? "Edited internal note" : "Edited draft"}</Label>
           <Textarea
             id={`${uid}-draft`}
             required
@@ -115,7 +115,11 @@ function DecisionForm({ item, onDone }: { item: ReviewItem; onDone: (updated: Re
             aria-describedby={`${uid}-draft-help`}
           />
           <p id={`${uid}-draft-help`} className="text-muted-foreground text-xs">
-            {draftChanged ? "Your edited text will replace the model draft." : "Change the draft to submit an edit."}
+            {item.contact_hold
+              ? draftChanged
+                ? "Your edited text will replace the internal note. The customer contact hold remains in force."
+                : "Change the internal note to submit an edit. The customer contact hold remains in force."
+              : draftChanged ? "Your edited text will replace the model draft." : "Change the draft to submit an edit."}
           </p>
         </div>
       )}
@@ -234,7 +238,11 @@ function ReviewCard({ item, canDecide, onUpdated }: { item: ReviewItem; canDecid
         )}
         <div>
           <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-            {item.decision === "edit" ? "Edited draft" : "Draft"}
+            {item.contact_hold
+              ? item.decision === "edit"
+                ? "Edited internal note — do not contact the customer"
+                : "Internal note — do not contact the customer"
+              : item.decision === "edit" ? "Edited draft" : "Draft"}
           </h3>
           <p className="bg-muted/50 mt-1 rounded-md border p-3 text-sm leading-relaxed whitespace-pre-line">{item.draft}</p>
         </div>

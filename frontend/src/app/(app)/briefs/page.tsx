@@ -21,6 +21,7 @@ import type { Brief } from "@/lib/types";
 import { displayValue } from "@/lib/utils";
 
 function BriefView({ brief }: { brief: Brief }) {
+  const draftTitle = brief.contact_hold ? "Internal note — do not contact the customer" : "Draft message";
   return (
     <div className="space-y-6">
       <Alert variant="review">
@@ -48,10 +49,16 @@ function BriefView({ brief }: { brief: Brief }) {
           {brief.generation && (
             <p className="text-muted-foreground text-sm">
               {brief.generation.status === "generated" && brief.generation.provider.toLowerCase() === "gemini"
-                ? "Gemini-assisted draft based on the recorded facts and policy evidence."
+                ? brief.contact_hold
+                  ? "Gemini evidence accompanies the internal note; the recorded contact restriction still applies."
+                  : "Gemini-assisted draft based on the recorded facts and policy evidence."
                 : brief.generation.status === "fallback"
-                  ? "AI assistance was unavailable. This draft uses the recorded facts and local rules."
-                  : "Draft prepared from the recorded facts and local rules."}
+                  ? brief.contact_hold
+                    ? "AI evidence assistance was unavailable. The internal note follows the recorded restrictions and local rules."
+                    : "AI assistance was unavailable. This draft uses the recorded facts and local rules."
+                  : brief.contact_hold
+                    ? "Internal note prepared from the recorded restrictions and local rules."
+                    : "Draft prepared from the recorded facts and local rules."}
             </p>
           )}
           <p className="leading-relaxed whitespace-pre-line">{brief.summary}</p>
@@ -131,12 +138,16 @@ function BriefView({ brief }: { brief: Brief }) {
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Draft message</CardTitle>
-            <CardDescription>Read-only here. Supervisors can edit it during review.</CardDescription>
+            <CardTitle>{draftTitle}</CardTitle>
+            <CardDescription>
+              {brief.contact_hold
+                ? "For internal supervisor review only. This is not a message to send or read to the customer."
+                : "Read-only here. Supervisors can edit it during review."}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Label htmlFor="brief-draft" className="sr-only">
-              Draft message
+              {draftTitle}
             </Label>
             <Textarea id="brief-draft" readOnly value={brief.draft} className="bg-muted/40 min-h-40 leading-relaxed" />
           </CardContent>

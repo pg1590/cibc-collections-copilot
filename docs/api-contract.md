@@ -8,8 +8,8 @@ Base `/api`, JSON. Snapshot 2026-09-28. Local calculations and reviews; optional
 - `GET /customers?search=&limit=20`: `{items:[{customer_id,name,province,open_cases,total_overdue,max_dpd,identity_confidence}],total}`.
 - `GET /customers/{customer_id}`: `{customer:{customer_id,name,province,preferred_language,identity_confidence},accounts:[],cases:[],identity:[],notes:[],features:{},snapshot_date}`. Agent restricted to assigned cases. Arrays contain source keys and evidence, never protected attributes.
 - `POST /ask`: `{question}` → `{answer,sql_or_sources,refused,reason,rows:[],sources:[],execution_ms,snapshot_date}`. Analyst/supervisor only for aggregate questions; an agent can use scoped customer briefs.
-- `POST /briefs`: `{customer_id}` → `{brief_id,customer_id,summary,signals:[{name,value,evidence}],recommendation,policy_sources:[],draft,status:"pending",model:{name,version},features:{}}`.
-- `GET /reviews`: `{items:[{brief_id,customer_id,summary,recommendation,draft,status,created_at,decision,reason,reviewer}]}`.
+- `POST /briefs`: `{customer_id}` → `{brief_id,customer_id,summary,signals:[{name,value,evidence}],recommendation,contact_hold:boolean,policy_sources:[],draft,status:"pending",model:{name,version},features:{}}`.
+- `GET /reviews`: `{items:[{brief_id,customer_id,summary,recommendation,draft,contact_hold?:boolean,status,created_at,decision,reason,reviewer}]}`.
 - `POST /reviews/{brief_id}`: `{decision:"approve"|"reject"|"edit",reason,draft?}` → updated record. Supervisor only. A reason is required and editing requires a draft. Review records are persistent and append an audit event. Approval records a decision; it does not contact customers.
 - `GET /audit`: `{items:[{event_id,at,actor,action,resource,details}]}`. Supervisor only.
 - `GET /quality`: pipeline JSON `{snapshot_date,raw_counts,curated_counts,checks:[{check,table,failed_rows,total_rows,severity}],identity:{},built_at}`.
@@ -33,6 +33,8 @@ Source WAVs are PCM16 mono/stereo, at most 16 MiB and ten minutes; their size, d
 `/health` includes `gemini_configured` and the current runtime description. `/ask` can include a validated `plan:{metric_id,grouping,start_date,end_date,denominator,definition_source}`; the end date is exclusive. Numeric `answer` and `rows` remain local. Optional `explanation` and `explanation_sources` contain verified, complete evidence quotations shown separately.
 
 Briefs/reviews include `recommendation_reason`, `hardship_status:"recorded"|"possible"|"not_established"`, and `recorded_hardship_cases`. Recorded hardship is a source flag, not reviewed eligibility. Holds override recommendations. The supervisor's `reason` remains separate from the system's recommendation reason. Optional `summary_evidence`/`summary_sources` never replace facts, recommendations or drafts.
+
+New briefs also persist `contact_hold:boolean`, returned on review records. When true, `draft` is an internal no-contact note naming the actual recorded restrictions and case references. Its inline citations match the restriction: insolvency/bankruptcy/consumer proposal uses POL-COLL-001 v3.0 §7.3 (with conditional representative guidance from §5.4); cease-contact/communication uses §5.4; deceased-only notes request supervisor verification without an invented procedure or citation. The existing `policy_sources`, pending status and hold priority are preserved. Optional Gemini enrichment cannot replace the note or clear the hold. Historical review records may lack this field; regenerate a brief to use the new note and label.
 
 `generation:{provider,status,model?,stages:{plan,summary},evidence_source_ids}` labels local/generated/fallback stages. Ask/brief audit records include generation metadata and evidence source identifiers. Keys and raw provider responses are excluded. Provider errors preserve local answers or request clarification, rather than inventing a result.
 

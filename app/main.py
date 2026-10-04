@@ -275,7 +275,18 @@ def brief(body:Brief,u=Depends(user)):
     if hold:
         recommendation='Hold contact and route to a supervisor to verify the recorded restriction.'
         recommendation_reason='Contact is on hold because the source records '+ '; '.join(hold_evidence)+'. These restrictions take priority over hardship cues or model scores.'
-        draft='Internal review only. Check the recorded contact, insolvency or deceased-customer restriction before taking any action.'
+        hold_note=['Internal review only. Do not contact this customer.',
+          'Recorded restrictions: '+'; '.join(dict.fromkeys(hold_evidence))+'.']
+        insolvency=bool(profile['bankruptcy_flag'] or profile['consumer_proposal_flag'] or any(case['insolvency_hold_flag'] for case in active_cases))
+        deceased=bool(profile['deceased_flag'] or any(case['deceased_hold_flag'] for case in active_cases))
+        if insolvency:
+            hold_note.append('All collection contact stops from the filing date (POL-COLL-001 v3.0 §7.3). '
+              'If a Licensed Insolvency Trustee represents the customer, all contact goes through that representative (POL-COLL-001 v3.0 §5.4).')
+        if profile['cease_communication_flag'] or any(case['cease_contact_flag'] for case in active_cases):
+            hold_note.append('Calls, texts and emails stop'+('' if insolvency or deceased else '; required letters and statements continue')+' (POL-COLL-001 v3.0 §5.4).')
+        if deceased:
+            hold_note.append('A supervisor must verify the recorded deceased-customer restriction before any action.')
+        draft=' '.join(hold_note)
         policy_sources=['POL-COLL-001 v3.0 §7.3','POL-COLL-004 v4.2 §4.2']
     elif recorded_cases:
         recommendation='Financial hardship is recorded. Review affordability and eligible support options before requesting payment.'
@@ -296,7 +307,7 @@ def brief(body:Brief,u=Depends(user)):
     if profile['internal_do_not_call_flag']:
         recommendation+=' Internal do-not-call flag is recorded; do not initiate a call.'
         recommendation_reason+=' A separate internal do-not-call flag blocks calling.'
-    payload={'brief_id':str(uuid.uuid4()),'customer_id':body.customer_id,'summary':f"{facts['open_cases']} open case(s), CAD {facts['total_overdue']:,.2f} overdue. "+('Financial evidence: '+' '.join(spans) if spans else 'No supported financial text cue found in the latest note.'),'signals':signals,'recommendation':recommendation,'recommendation_reason':recommendation_reason,'hardship_status':hardship_status,'recorded_hardship_cases':recorded_cases,'policy_sources':policy_sources,'draft':draft,'status':'pending','model':{'name':'Financial hardship review triage','version':VERSION,'review_probability':round(probability,4),'input_features':bundle['features']},'features':features}
+    payload={'brief_id':str(uuid.uuid4()),'customer_id':body.customer_id,'summary':f"{facts['open_cases']} open case(s), CAD {facts['total_overdue']:,.2f} overdue. "+('Financial evidence: '+' '.join(spans) if spans else 'No supported financial text cue found in the latest note.'),'signals':signals,'recommendation':recommendation,'recommendation_reason':recommendation_reason,'hardship_status':hardship_status,'recorded_hardship_cases':recorded_cases,'contact_hold':hold,'policy_sources':policy_sources,'draft':draft,'status':'pending','model':{'name':'Financial hardship review triage','version':VERSION,'review_probability':round(probability,4),'input_features':bundle['features']},'features':features}
     runtime.enrich_brief(payload)
     with storage.connect() as s:
         s.execute('INSERT INTO briefs(brief_id,customer_id,actor,payload,status,created_at) VALUES(?,?,?,?,?,?)',(payload['brief_id'],body.customer_id,u['username'],json.dumps(payload,default=str),'pending',storage.now()))

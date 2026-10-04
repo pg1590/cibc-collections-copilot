@@ -70,6 +70,11 @@ def test_insolvency_hold_overrides_recorded_hardship(api):
     assert brief['recommendation'].startswith('Hold contact')
     assert 'insolvency hold on case CS-held' in brief['recommendation_reason']
     assert brief['draft'].startswith('Internal review only')
+    assert brief['contact_hold'] is True and brief['status'] == 'pending'
+    assert 'insolvency hold on case CS-held' in brief['draft']
+    assert 'POL-COLL-001 v3.0 §7.3' in brief['draft']
+    assert 'If a Licensed Insolvency Trustee represents' in brief['draft']
+    assert brief['policy_sources'] == ['POL-COLL-001 v3.0 §7.3','POL-COLL-004 v4.2 §4.2']
 
 
 def test_possible_cue_is_distinct_from_recorded_hardship(api):
@@ -116,6 +121,7 @@ def test_closed_case_hold_does_not_apply_to_active_cases(api):
         c.execute("UPDATE gold.cases SET insolvency_hold_flag=true WHERE customer_id='closed'")
     brief=generate(api,'closed')
     assert not brief['recommendation'].startswith('Hold contact')
+    assert brief['contact_hold'] is False
 
 
 def test_do_not_call_restriction_remains_explicit(api):
@@ -124,6 +130,7 @@ def test_do_not_call_restriction_remains_explicit(api):
     brief=generate(api,'recorded')
     assert 'do not initiate a call' in brief['recommendation']
     assert 'blocks calling' in brief['recommendation_reason']
+    assert brief['contact_hold'] is False
 
 
 def test_french_recorded_hardship_draft_does_not_invent_customer_statement(api):
@@ -132,3 +139,91 @@ def test_french_recorded_hardship_draft_does_not_invent_customer_statement(api):
     brief=generate(api,'recorded')
     assert 'est enregistrée' in brief['draft']
     assert 'vous avez signalé' not in brief['draft'].lower()
+
+
+def test_consumer_proposal_note_names_both_recorded_sources(api):
+    with duckdb.connect(str(main.DB)) as c:
+        c.execute("UPDATE gold.customers SET consumer_proposal_flag=true WHERE customer_id='held'")
+    brief = generate(api, 'held')
+    assert 'consumer proposal on the customer record' in brief['draft']
+    assert 'insolvency hold on case CS-held' in brief['draft']
+    assert 'Do not contact this customer' in brief['draft']
+    assert 'All collection contact stops from the filing date' in brief['draft']
+    assert 'cease-communication' not in brief['draft'] and 'deceased' not in brief['draft']
+    assert brief['hardship_status'] == 'recorded' and brief['contact_hold'] is True
+
+
+@pytest.mark.parametrize('source', ['case', 'customer'])
+def test_cease_contact_note_cites_only_matching_section(api, source):
+    with duckdb.connect(str(main.DB)) as c:
+        if source == 'case':
+            c.execute("UPDATE gold.cases SET cease_contact_flag=true WHERE customer_id='recorded'")
+        else:
+            c.execute("UPDATE gold.customers SET cease_communication_flag=true WHERE customer_id='recorded'")
+    brief = generate(api, 'recorded')
+    assert brief['contact_hold'] is True and brief['status'] == 'pending'
+    assert brief['recommendation'].startswith('Hold contact')
+    assert 'POL-COLL-001 v3.0 §5.4' in brief['draft'] and '§7.3' not in brief['draft']
+    assert 'Calls, texts and emails stop; required letters and statements continue' in brief['draft']
+    assert 'insolvency' not in brief['draft'] and 'deceased' not in brief['draft']
+    assert ('case CS-recorded' if source == 'case' else 'customer record') in brief['draft']
+
+
+@pytest.mark.parametrize('source', ['case', 'customer'])
+def test_deceased_note_has_no_invented_procedure_or_citation(api, source):
+    with duckdb.connect(str(main.DB)) as c:
+        if source == 'case':
+            c.execute("UPDATE gold.cases SET deceased_hold_flag=true WHERE customer_id='recorded'")
+        else:
+            c.execute("UPDATE gold.customers SET deceased_flag=true WHERE customer_id='recorded'")
+    brief = generate(api, 'recorded')
+    assert brief['contact_hold'] is True and brief['status'] == 'pending'
+    assert 'deceased' in brief['draft'] and 'A supervisor must verify' in brief['draft']
+    assert 'Do not contact this customer' in brief['draft']
+    assert 'POL-' not in brief['draft'] and '§' not in brief['draft']
+    assert 'estate' not in brief['draft'].lower() and 'trustee' not in brief['draft'].lower()
+
+
+def test_multiple_recorded_holds_are_listed_once(api):
+    with duckdb.connect(str(main.DB)) as c:
+        c.execute("UPDATE gold.cases SET cease_contact_flag=true, deceased_hold_flag=true WHERE customer_id='held'")
+        c.execute("UPDATE gold.customers SET consumer_proposal_flag=true WHERE customer_id='held'")
+    brief = generate(api, 'held')
+    for restriction in ['cease-contact restriction on case CS-held', 'insolvency hold on case CS-held',
+                        'deceased-customer hold on case CS-held', 'consumer proposal on the customer record']:
+        assert brief['draft'].count(restriction) == 1
+    assert brief['recommendation'].startswith('Hold contact') and brief['hardship_status'] == 'recorded'
+    assert 'letters and statements continue' not in brief['draft']
+
+
+def test_bankruptcy_only_note_cites_insolvency_policy(api):
+    with duckdb.connect(str(main.DB)) as c:
+        c.execute("UPDATE gold.customers SET bankruptcy_flag=true WHERE customer_id='recorded'")
+    brief = generate(api, 'recorded')
+    assert 'bankruptcy on the customer record' in brief['draft']
+    assert 'POL-COLL-001 v3.0 §7.3' in brief['draft']
+    assert brief['contact_hold'] is True and brief['recommendation'].startswith('Hold contact')
+    assert 'consumer proposal' not in brief['draft'] and 'cease' not in brief['draft'] and 'deceased' not in brief['draft']
+
+
+def test_cease_and_deceased_note_does_not_authorize_letters(api):
+    with duckdb.connect(str(main.DB)) as c:
+        c.execute("UPDATE gold.cases SET cease_contact_flag=true, deceased_hold_flag=true WHERE customer_id='recorded'")
+    brief = generate(api, 'recorded')
+    assert 'Calls, texts and emails stop' in brief['draft'] and '§5.4' in brief['draft']
+    assert 'A supervisor must verify' in brief['draft']
+    assert 'letters and statements continue' not in brief['draft'] and '§7.3' not in brief['draft']
+
+
+@pytest.mark.parametrize('decision', ['approve', 'edit'])
+def test_review_keeps_explicit_hold_indicator(api, decision):
+    brief = generate(api, 'held')
+    client, headers = api
+    body = {'decision': decision, 'reason': 'Verified the recorded hold'}
+    if decision == 'edit':
+        body['draft'] = brief['draft'] + ' Supervisor verification pending.'
+    saved = client.post('/api/reviews/' + brief['brief_id'], json=body, headers=headers)
+    assert saved.status_code == 200 and saved.json()['contact_hold'] is True
+    assert saved.json()['recommendation'] == brief['recommendation']
+    stored = next(item for item in client.get('/api/reviews', headers=headers).json()['items'] if item['brief_id'] == brief['brief_id'])
+    assert stored['contact_hold'] is True

@@ -302,7 +302,7 @@ npm run build
 
 Current local verification:
 
-- **325 automated tests passed**, covering roles, hardship/hold priority, metric dates/cohorts/groupings/province filters, C360 contract validation, feature parity, provider fallback/privacy, audio integrity/access/cache/queue controls and persistent reviews/audit.
+- **337 automated tests passed**, covering roles, hardship/hold priority and specific internal notes, metric dates/cohorts/groupings/province filters, C360 contract validation, feature parity, provider fallback/privacy, audio integrity/access/cache/queue controls and persistent reviews/audit.
 - **23 C360 contract/product availability checks passed** on 1,014,631 rows without changing the database. Freshness, identity precision and governance approval are outside this check.
 - **50 benchmark rows generated** (35 original plus 15 extra), including nine refusals and no unresolved results.
 - **12/12 numeric development questions matched** organizer reference SQL within tolerance.

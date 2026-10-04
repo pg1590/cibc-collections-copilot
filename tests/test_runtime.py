@@ -149,6 +149,20 @@ def test_brief_source_identifiers_in_factual_summary_are_redacted(monkeypatch):
     assert "NOTE-001" not in outbound
 
 
+@pytest.mark.parametrize('fail_summary', [False, True])
+def test_gemini_enrichment_preserves_internal_hold_note_and_indicator(monkeypatch, fail_summary):
+    source = brief()
+    source.update(contact_hold=True, status='pending', recommendation='Hold contact and route to a supervisor.',
+                  draft='Internal review only. Do not contact this customer. Insolvency hold on case CS-2026-001 (POL-COLL-001 v3.0 §7.3).')
+    original = deepcopy(source)
+    client = install(monkeypatch, result(), fail_summary=fail_summary)
+    runtime.enrich_brief(source)
+    for key in ['contact_hold', 'draft', 'recommendation', 'recommendation_reason', 'status']:
+        assert source[key] == original[key]
+    assert len(client.calls) == 1
+    assert 'Internal review only' not in str(client.calls[0]['sources'])
+
+
 def test_transcript_text_requires_explicit_opt_in(monkeypatch):
     source = result(rows=[], sources=[{"transcript_id": "TR-001"}], answer="Customer says I cannot afford payment.")
     client = install(monkeypatch, source)
