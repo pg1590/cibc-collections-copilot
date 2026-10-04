@@ -296,7 +296,7 @@ npm run build
 
 Current local verification:
 
-- **210 automated tests passed**, covering roles, hardship/hold priority, metric dates/cohorts/groupings, provider fallback/privacy, audio integrity/access/cache/queue controls and persistent reviews/audit.
+- **256 automated tests passed**, covering roles, hardship/hold priority, metric dates/cohorts/groupings/province filters, provider fallback/privacy, audio integrity/access/cache/queue controls and persistent reviews/audit.
 - **50 benchmark rows generated** (35 original plus 15 extra), including nine refusals and no unresolved results.
 - **12/12 numeric development questions matched** organizer reference SQL within tolerance.
 - **100 customers checked** for offline/live feature consistency, with zero mismatches.
