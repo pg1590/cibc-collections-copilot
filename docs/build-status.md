@@ -4,7 +4,8 @@ The four-layer local application and priority correctness fixes are implemented.
 
 ## Verified
 
-- 288 automated tests pass, including roles, hardship/hold priority, metric/date/cohort/province validation, C360 contract checks, provider fallback/concurrency, privacy, evidence and persistent review/audit.
+- 325 automated tests pass, including roles, hardship/hold priority, metric/date/cohort/province validation, C360 contract and feature parity checks, provider fallback/concurrency, privacy, evidence and persistent review/audit.
+- Ved's checker finds zero sampled feature mismatches across 1,000 customers and 15 columns. Full-table key coverage passes on 1,014,631 stored rows; a second sample with seed 42 also passes.
 - Aryan's read-only C360 checker passes 23 checks on 1,014,631 rows; declared types, key uniqueness, nulls, minimums and product availability are checked. The measured report lists remaining unverified contract items.
 - All 12 numeric public development references match within tolerance. All 50 benchmark rows (35 original plus 15 extra) regenerate through the shared API pipeline, with nine refusals and zero unresolved results.
 - 62 reviewed metric/grouping SQL combinations pass EXPLAIN. The 15 metric-definition examples return a supported plan or explicit clarification.

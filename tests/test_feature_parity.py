@@ -61,7 +61,7 @@ def test_identical_rows_pass_with_nulls(db):
     assert result['status'] == 'pass' and result['mismatch_count'] == 0
     assert result['sample_size'] == len(CUSTOMERS) and result['stored_rows'] == len(CUSTOMERS)
     assert result['feature_version'] == VERSION and result['snapshot'] == '2026-09-28'
-    # C3-C5 have no open case and no resolved promise, so NULLs must compare equal to NULLs.
+    # C3-C5 have no open case; C2-C5 have no resolved promise. NULL matches only NULL.
     assert result['sample_null_counts']['max_dpd'] == 3
     assert result['sample_null_counts']['broken_promise_ratio'] == 4
     assert parity.main(['--db', str(db), '--sample-size', '10']) == 0
@@ -101,8 +101,8 @@ def test_source_change_after_store_is_detected(db):
 def test_missing_or_duplicate_rows_and_schema_drift_fail(db):
     change(db, "INSERT INTO gold.features SELECT * FROM gold.features WHERE customer_id='C2'")
     change(db, 'ALTER TABLE gold.features ADD COLUMN unexpected INTEGER')
-    kinds = {(m['kind'], m.get('customer_id') or m.get('column')) for m in parity.check(db, sample_size=10)['mismatches']}
-    assert kinds == {('row_count', 'C2'), ('schema', 'unexpected')}
+    kinds = {(m['kind'], m.get('customer_id') or m.get('column') or m.get('rule')) for m in parity.check(db, sample_size=10)['mismatches']}
+    assert kinds == {('row_count', 'C2'), ('schema', 'unexpected'), ('key_coverage', 'duplicate_customer_rows')}
 
 
 def test_feature_version_drift_fails(db):
@@ -117,6 +117,7 @@ def test_sample_is_reproducible_and_seeded(db):
         assert parity.sample_ids(c, 3, 11) == parity.sample_ids(c, 3, 11)
         assert len(parity.sample_ids(c, 3, 11)) == first['sample_size'] == 3
         assert len({tuple(parity.sample_ids(c, 5, s)) for s in range(10)}) > 1
+        assert len({frozenset(parity.sample_ids(c, 2, s)) for s in range(10)}) > 1
 
 
 def test_checker_is_read_only(db):
@@ -137,3 +138,85 @@ def test_values_match_is_null_aware():
     assert parity.values_match(math.nan, math.nan) and not parity.values_match(math.nan, 0.0)
     assert parity.values_match(0.1 + 0.2, 0.3) and not parity.values_match(1.0, 1.001)
     assert parity.values_match(1, 1) and not parity.values_match(1, 0) and parity.values_match('N1', 'N1')
+
+
+@pytest.mark.parametrize('mutation,rule', [
+    ("DELETE FROM gold.features WHERE customer_id='C1'", 'missing_stored_customers'),
+    ("INSERT INTO gold.features SELECT * REPLACE('EXTRA' AS customer_id) FROM gold.features WHERE customer_id='C1'", 'extra_stored_customers'),
+    ("INSERT INTO gold.features SELECT * REPLACE(NULL AS customer_id) FROM gold.features WHERE customer_id='C1'", 'null_customer_ids'),
+    ("INSERT INTO gold.features SELECT * FROM gold.features WHERE customer_id='C1'", 'duplicate_customer_rows'),
+])
+def test_key_coverage_detects_drift_beyond_the_sample(db, mutation, rule):
+    change(db, mutation)
+    result = parity.check(db, sample_size=1)
+    assert result['status'] == 'fail'
+    assert result['key_coverage'][rule] == 1
+    assert {'kind': 'key_coverage', 'rule': rule, 'count': 1} in result['mismatches']
+
+
+def test_type_drift_fails_even_when_values_compare_equal(db):
+    change(db, 'ALTER TABLE gold.features ALTER COLUMN contacts_7d TYPE DOUBLE')
+    result = parity.check(db, sample_size=10)
+    assert result['status'] == 'fail' and result['schema']['type_drift'] == ['contacts_7d']
+    assert {m['kind'] for m in result['mismatches']} == {'schema_type', 'value'}
+    assert {m['column'] for m in result['mismatches']} == {'contacts_7d'}
+
+
+@pytest.mark.parametrize('metadata', [None, 'not JSON', '[]', '{}', '{"version":null}', '{"version":3}', '{"version":""}'])
+def test_unverifiable_version_cannot_pass(db, metadata):
+    report = db.parent / 'features-report.json'
+    if metadata is None:
+        report.unlink()
+    else:
+        report.write_text(metadata)
+    with pytest.raises(parity.CheckError):
+        parity.check(db, sample_size=10)
+    assert parity.main(['--db', str(db)]) == 2
+
+
+@pytest.mark.parametrize('alias', ['direct', 'symlink', 'hardlink'])
+def test_output_cannot_overwrite_database_or_version_report(db, tmp_path, alias):
+    import os
+    for source in [db, db.parent / 'features-report.json']:
+        before = source.read_bytes()
+        output = source
+        if alias != 'direct':
+            output = tmp_path / ('alias-' + source.name)
+            if alias == 'symlink':
+                output.symlink_to(source)
+            else:
+                os.link(source, output)
+        assert parity.main(['--db', str(db), '--output', str(output)]) == 2
+        assert source.read_bytes() == before
+
+
+def test_output_write_failure_returns_controlled_error(db, tmp_path):
+    assert parity.main(['--db', str(db), '--output', str(tmp_path)]) == 2
+
+
+@pytest.mark.parametrize('value', [math.nan, math.inf, -math.inf])
+def test_nonfinite_mismatch_values_remain_distinct_from_null_in_valid_json(value):
+    stored = parity.jsonable(value)
+    assert stored is not None and isinstance(stored, str)
+    assert json.loads(json.dumps({'stored': stored}, allow_nan=False))['stored'] == stored
+
+
+@pytest.mark.parametrize('stored,recomputed', [('1.0', 1.0), (True, 1), (1, 1.0)])
+def test_comparison_requires_matching_types(stored, recomputed):
+    assert not parity.values_match(stored, recomputed)
+
+
+def test_empty_store_returns_cannot_run(db):
+    change(db, 'DELETE FROM gold.features')
+    assert parity.main(['--db', str(db)]) == 2
+
+
+def test_failed_atomic_output_preserves_existing_report(db, tmp_path, monkeypatch):
+    output = tmp_path / 'previous.json'
+    output.write_text('previous report')
+    def fail_replace(*args, **kwargs):
+        raise OSError('simulated replace failure')
+    monkeypatch.setattr(Path, 'replace', fail_replace)
+    assert parity.main(['--db', str(db), '--output', str(output)]) == 2
+    assert output.read_text() == 'previous report'
+    assert not list(tmp_path.glob('.feature-parity-*.tmp'))
