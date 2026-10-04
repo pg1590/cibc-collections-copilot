@@ -40,11 +40,11 @@ def arrow(x1,y1,x2,y2):
 
 text(32,H-25,W-64,'<b>Collections Copilot</b>',24)
 text(32,H-65,W-64,'Adda Wale | Implemented local build | Snapshot 28 September 2026',10,muted)
-text(32,H-100,W-64,'<b>Source release:</b> CRM, cards, lending, core banking, collections and bureau data. Immutable CSV / Parquet, English and French notes/transcripts, current policy documents.',10)
+text(32,H-100,W-64,'<b>Source release:</b> CRM, cards, lending, core banking, collections and bureau data. CSV / Parquet, bilingual notes/transcripts, current policies and optional synthetic WAV audio.',10)
 width=(W-100)/2;height=153;left=32;right=W/2+18;top=H-307;bottom=top-184
 box(left,top,width,height,1,'Data Product Factory','<b>DuckDB raw → curated → C360</b><br/>Typed checks retain raw values and string IDs.<br/>Cross-source identity rules; uncertain links held for review, not automatically merged.<br/><b>Outputs:</b> C360, lineage, counted quality report and YAML contract.')
-box(right,top,width,height,2,'Insight / NLP','<b>FastAPI + reviewed metric compiler</b><br/>Local or optional Gemini metric/group/date plans → bound SQL. Model-written SQL is rejected.<br/>BM25 policy retrieval; exact, timestamped call statements. Refusals and clarification.<br/><b>Outputs:</b> cited answers and benchmark CSV.')
-box(left,bottom,width,height,3,'Feature Store','<b>One versioned offline/live definition</b><br/>Structured features and bilingual financial cues.<br/>Polars / Pandera checks. Parity measured on 100 customers: zero mismatches.<br/><b>Outputs:</b> stored features and source/version registry; classifier inputs unchanged.')
+box(right,top,width,height,2,'Insight / NLP','<b>FastAPI + reviewed metric compiler</b><br/>Validated local / optional Gemini plans → bound SQL.<br/>Policy retrieval and exact transcript statements.<br/>Optional verified WAV playback + local Whisper ASR.<br/><b>Outputs:</b> cited answers, benchmark CSV and review-only voice evidence.')
+box(left,bottom,width,height,3,'Feature Store','<b>One versioned offline/live definition</b><br/>Structured features and bilingual financial cues.<br/>100-customer parity: zero mismatches.<br/>ASR cache reuses cues; speakers remain unknown.<br/><b>Outputs:</b> stored features and source/version registry; voice cues do not enter the classifier.')
 box(right,bottom,width,height,4,'Model / Decisioning','<b>AI: scikit-learn logistic review classifier</b><br/>Rules: holds → recorded hardship → possible cues.<br/>Facts, reasons and draft; optional Gemini evidence selection cannot change decisions.<br/><b>Human:</b> supervisor approve / reject / edit.<br/><b>Outputs:</b> pending brief and SQLite review/audit.')
 arrow(left+width,top+height/2,right,top+height/2)
 arrow(left+width,bottom+height/2,right,bottom+height/2)

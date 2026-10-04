@@ -15,6 +15,19 @@ Base `/api`, JSON. Snapshot 2026-09-28. Local calculations and reviews; optional
 - `GET /quality`: pipeline JSON `{snapshot_date,raw_counts,curated_counts,checks:[{check,table,failed_rows,total_rows,severity}],identity:{},built_at}`.
 - `GET /features`: `{version,definitions:[],parity:{checked,mismatches},model:{}}`. Actual checked parity, never assumed.
 
+## Optional voice evidence
+
+`/health` includes `speech_to_text_available`. All recording endpoints require bearer authentication. Agents are authorized against the recording's individual case assignment; analyst/supervisor access still requires a recording-to-transcript/contact/case/customer identity match. Customer case linkage must agree with the golden CRM mapping. Protected voice metadata is not returned.
+
+- `GET /customers/{customer_id}/voice`: `{items:[{voice_sample_id,transcript_id,case_id,call_start_ts,language,duration_sec,audio_available}],speech_to_text_available,speech_model,note}`. Most recent twenty linked recordings, ordered deterministically. Missing audio is explicit.
+- `GET /voice/{voice_sample_id}/audio`: checksum-verified `audio/wav` bytes, `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`. No unauthenticated URL or token query parameter. Playback is audited.
+- `POST /voice/{voice_sample_id}/transcribe`: start or reuse a local job; returns `{status,job_id?}` or a completed cached transcript. Four active jobs maximum, one worker; queue-full is HTTP 429 and unavailable model is 503. No request-supplied file path or audio upload.
+- `GET /voice/{voice_sample_id}/transcription`: `{status:"not_started"|"queued"|"running"|"completed"|"failed",job_id?,error?,transcript?}`. Reauthorizes and verifies audio before returning results. Completed reads are audited.
+
+Completed `transcript` contains `text`, `segments:[{start,end,text}]`, detected `language`, local model/source hashes, creation time, processing duration, `feature_version` and six shared financial cue flags. `speaker_attribution:"unavailable"` and `review_required:true` are mandatory. Timestamps and recognized words can be wrong; cue flags include all speakers. No customer hardship status, classifier score, brief draft or contact/eligibility decision is updated. ASR text stays local and is not sent to Gemini by these endpoints.
+
+Source WAVs are PCM16 mono/stereo, at most 16 MiB and ten minutes; their size, duration and SHA-256 must agree with supplied metadata. The worker revalidates bytes and loads only prepared local artifacts. Each process has one bounded queue and a three-minute per-job timeout. Caches bind audio, model, decoder and cue definitions. Multiple backend workers and voice capacity remain unverified.
+
 ## Additional review and generation fields
 
 `/health` includes `gemini_configured` and the current runtime description. `/ask` can include a validated `plan:{metric_id,grouping,start_date,end_date,denominator,definition_source}`; the end date is exclusive. Numeric `answer` and `rows` remain local. Optional `explanation` and `explanation_sources` contain verified, complete evidence quotations shown separately.

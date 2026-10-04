@@ -163,3 +163,40 @@ export interface FeatureRegistry {
   parity: { checked: number; mismatches: number };
   model: ApiRecord;
 }
+
+export interface VoiceSample {
+  voice_sample_id: string;
+  transcript_id: string;
+  case_id: string;
+  call_start_ts: string;
+  language: string;
+  duration_sec: number;
+  audio_available: boolean;
+}
+
+export interface CustomerVoice {
+  items: VoiceSample[];
+  speech_to_text_available: boolean;
+  speech_model: string;
+  note: string;
+}
+
+export interface VoiceTranscription {
+  status: "not_started" | "queued" | "running" | "completed" | "failed";
+  job_id?: string;
+  error?: string;
+  transcript?: {
+    text: string;
+    segments: { start: number; end: number; text: string }[];
+    language: string;
+    language_probability: number;
+    model: string;
+    source_sha256: string;
+    created_at: string;
+    features: Record<string, number>;
+    speaker_attribution: "unavailable";
+    review_required: true;
+    duration_sec: number;
+    processing_seconds: number;
+  };
+}

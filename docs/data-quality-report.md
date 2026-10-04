@@ -72,3 +72,9 @@ Mixed supported date formats become typed dates/timestamps. Customer IDs remain 
 ## Remaining limitations
 
 No source row is dropped during typed curation. Golden views intentionally exclude unresolved links. Source-wide totals can therefore differ from linked C360 totals. Missing DPD, missing identity evidence, orphan references and bucket contradictions are reported rather than claimed as repaired. Matching precision and missed-match rates require independently labelled identity pairs; those measures are not available yet.
+
+## Optional voice source verification
+
+The official voice pack has 2,000 recordings. Every file size and SHA-256 matched `voice_samples.csv`; there were zero download/integrity mismatches. All 2,000 voice/transcript/contact links agree. Of these, 56 reference source cases that lack a linked golden case; 1,944 have verified case/customer linkage and can be served. The 56 are preserved locally and excluded from customer playback/transcription until identity resolution. No speculative customer association was added. WAV frame/format/duration checks also run on access.
+
+For the extra cure-time question's period (1 July through 28 September), all 31,598 cured cases have nonnegative recorded cure duration consistent with `cure_date - case_open_date`; zero negative or inconsistent values were found. All 40,665 September outbound SMS send events with a payment link have a recorded click flag; zero unknown flags were found in that cohort. These focused read-only checks do not replace full-source data quality reporting.

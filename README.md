@@ -54,6 +54,8 @@ flowchart TB
         browser["Analyst, agent or supervisor<br/>Next.js web interface"]
         api["FastAPI backend<br/>Sign-in and role-based access"]
         customer["Customer 360 lookups"]
+        voice["Optional voice evidence<br/>Verified WAV playback and local Whisper transcription"]
+        voicecache[("Local ASR evidence cache<br/>Timestamps, cues and source/model versions")]
         insight["2. Insight and NLP<br/>Validated metric plans, policy retrieval and transcript evidence"]
         brief["4. Models and Decisioning<br/>Live features, model score, contact rules and draft"]
         review["Supervisor review<br/>Approve, reject or edit with a reason"]
@@ -61,6 +63,8 @@ flowchart TB
 
         browser -->|Requests and responses| api
         api --> customer
+        api --> voice
+        voice --> voicecache
         api --> insight
         api --> brief
         api --> review
@@ -74,6 +78,8 @@ flowchart TB
     customer -->|Read| warehouse
     insight -->|Read-only queries| warehouse
     documents --> insight
+    recordings["Optional synthetic WAV pack<br/>Checksums and case-linked metadata"] --> voice
+    features -.->|Shared definitions for review cues| voice
     insight -.->|Question and permitted evidence| gemini
     gemini -.->|Validated plan or complete source excerpts| insight
     brief -.->|Redacted facts and rule explanation| gemini
@@ -98,6 +104,8 @@ flowchart TB
 Gemini selects a supported metric, grouping and date range; the backend validates the plan and compiles reviewed local SQL. Model-written SQL is never executed. Numeric answers and result tables come from DuckDB. Optional explanations select complete supplied evidence units, such as policy paragraphs or a result row; source IDs and the entire quoted unit must match before display. Fragment quotations and unsupported narrative are rejected. Numeric answers, original brief facts, recommendations and drafts are preserved; supporting evidence appears separately. If Gemini is unavailable or its response fails validation, the application uses local behavior. Recorded hardship, contact restrictions and supervisor approval stay under explicit application rules.
 
 The trained model is **class-balanced logistic regression**, implemented with scikit-learn. It uses six binary financial cues from English and French notes: income loss, income reduction, income delay, payment difficulty, hardship request and expense pressure. It does not receive unrestricted raw text or protected attributes. Its score is a review aid, not a hardship eligibility decision.
+
+Optional voice processing uses **Whisper base through faster-whisper**, locally on the CPU with int8 precision. It transcribes the supplied WAV audio; it does not substitute the provided transcript for speech recognition. Generated text, approximate segment timestamps and financial cue candidates are available for human inspection. Because the transcript has no speaker attribution, its cues do not enter the note classifier or change customer recommendations.
 
 The public labelled set contains 500 notes. Training uses 374 notes and evaluation uses 126, with customers kept separate between the two groups to reduce data leakage. Heldout precision is **89.29%**, recall **65.79%**, and F1 **75.76%**. Precision measures how often a positive prediction is correct; recall measures how many positive labels are found; F1 balances the two. These results apply to this small synthetic dataset, not production banking performance.
 
@@ -133,6 +141,31 @@ The first command may require your OS's Python venv package. The data build proc
 If the release is already extracted, skip `scripts/fetch_data.py`. Place the release at `data/maple_collections_release` or export `COPILOT_DATASET` with its absolute path before preparing data and starting the backend. The directory must contain the release's `data`, `files`, `labels` and `schema` folders. Generated databases, downloaded data and trained model files stay local and are ignored by Git.
 
 Source: [Maple Bank synthetic collections release](https://huggingface.co/datasets/nuxsh/maple-collections-hackathon), published by nuxsh under **CC BY 4.0**. Original files are preserved. This repository contains application code, aggregate reports and generated benchmark answers. The Python and frontend lock files record the verified dependencies.
+
+### Optional: enable voice recordings
+
+The main application works without audio. For playback and local speech-to-text, install the optional dependencies and download the official voice pack and model:
+
+```bash
+.venv/bin/python -m pip install -r requirements-voice.txt
+.venv/bin/python scripts/fetch_voice.py
+.venv/bin/python scripts/setup_voice.py
+```
+
+Allow roughly **8 GB of additional disk space** for the voice ZIP, extracted WAV files and model, plus dependencies. Downloads are needed once; subsequent transcription stays local and needs no API key. The fetch script pins the release and verifies all 2,000 recording checksums. The setup script pins and verifies the multilingual base model and checks offline loading. Audio, weights and generated transcripts remain in ignored `data/` directories. [faster-whisper documentation](https://github.com/SYSTRAN/faster-whisper)
+
+After starting the app, sign in as analyst or supervisor, search Customers for `HOR-9340`, and open **Voice evidence**. Recording `VS-11130` provides a short playback/transcription example. Customer `HAC-4447` has a longer example with a financial cue candidate. Agents can access only recordings on their assigned cases. The demo agent identity is configured with `COPILOT_AGENT_ID`; it is not a production employee identity mapping.
+
+The speech worker processes one job at a time, accepts at most four active jobs and stops a job after three minutes. Results are cached with audio, model and feature provenance. Run one backend process; multiple-worker scheduling and capacity have not been validated. Model artifacts default to `data/voice-model`; `COPILOT_VOICE_MODEL` can point to the prepared model directory.
+
+For a small reproducible offline comparison against the supplied transcript words:
+
+```bash
+HF_HUB_OFFLINE=1 .venv/bin/python scripts/setup_voice.py --verify-only
+HF_HUB_OFFLINE=1 .venv/bin/python scripts/evaluate_voice.py
+```
+
+The three-call smoke sample is purposive, English and synthetic; it does not establish general speech-recognition accuracy. See [voice verification](docs/voice-verification.md).
 
 ### 2. Start the backend
 
@@ -233,11 +266,11 @@ To regenerate released benchmark answers through the same engine used by `/api/a
 
 Output: `submission/benchmark_answers.csv`, with columns `question_id,answer,sql_or_sources,refused`. The engine does not look up released reference answers at runtime. Reference SQL is used only by the independent development validation. Generated answers must not be edited manually.
 
-When the organizer releases extra questions at **19:00 IST on 4 October 2026**, include their file with `--extra`:
+The organizer's 15 extra questions are included at `submission/benchmark_questions_extra.csv`. Regenerate the complete 50-question submission with `--extra`:
 
 ```bash
-.venv/bin/python scripts/run_benchmark.py --extra /absolute/path/extra_questions.csv
-.venv/bin/python scripts/package_submission.py --extra /absolute/path/extra_questions.csv --final --check-only
+.venv/bin/python scripts/run_benchmark.py --extra submission/benchmark_questions_extra.csv
+.venv/bin/python scripts/package_submission.py --extra submission/benchmark_questions_extra.csv --final --check-only
 ```
 
 After checking results, commit and push the final revision, then run the same package command without `--check-only`. It creates `../deliverables/AddaWale-code-backup.zip` from committed files and records the commit and SHA-256 in a manifest. `--final` requires all 15 extra questions; a pre-release backup is interim. The check verifies format and coverage, not hidden-answer correctness.
@@ -261,14 +294,16 @@ npm run build
 
 Current local verification:
 
-- **131 automated tests passed**, covering roles, hardship/hold priority, metric cohorts/groupings, provider failures, privacy, evidence validation and persistent reviews/audit.
-- **35 released benchmark rows generated**, including six refusals and no unresolved results.
+- **210 automated tests passed**, covering roles, hardship/hold priority, metric dates/cohorts/groupings, provider fallback/privacy, audio integrity/access/cache/queue controls and persistent reviews/audit.
+- **50 benchmark rows generated** (35 original plus 15 extra), including nine refusals and no unresolved results.
 - **12/12 numeric development questions matched** organizer reference SQL within tolerance.
 - **100 customers checked** for offline/live feature consistency, with zero mismatches.
 - HTTP integration passed for real synthetic-data customer views, questions, briefs, supervisor edits and audit.
 - Frontend type checking, lint and production build passed.
 
-These are local checks, not an organizer score. Hidden questions and future extra questions remain unverified. The rendered website still needs a browser walkthrough.
+All 2,000 supplied audio files passed publisher checksum checks; 1,944 recordings have a verified linked C360 case. Three actual calls were transcribed locally; their shared cue vectors match the offline calculation, while the exploratory pooled word-error rate is 22.03%. This tiny sample is not a representative accuracy evaluation.
+
+These are local checks, not an organizer score. Correctness of the extra answers has been checked against their queries and source definitions, but no hidden-answer score is available. The rendered website still needs a browser walkthrough.
 
 ## Repository guide
 
@@ -282,6 +317,7 @@ These are local checks, not an organizer score. Hidden questions and future extr
 | `app/policy_summary.py` | Extractive policy paragraphs and grouped, timestamped transcript statements. |
 | `app/features.py` | Versioned feature definitions shared by training, batch calculation and live briefs. |
 | `app/storage.py` | Persistent sessions, briefs, decisions and audit records. |
+| `app/voice.py`, `app/voice_worker.py` | Verified audio, bounded local transcription and review-only cached cue evidence. |
 | `scripts/` | Dataset download, data preparation, model training, verification and benchmark export. |
 | `tests/` | Automated tests for access, question handling, review storage and features. |
 | `config/` | Customer 360 data contract describing the output and its rules. |
@@ -298,6 +334,8 @@ These are local checks, not an organizer score. Hidden questions and future extr
 - [Released benchmark answers](submission/benchmark_answers.csv)
 - [API contract](docs/api-contract.md)
 - [Question planner implementation and scope](docs/reviews/insight-implementation.md)
+- [Extra benchmark implementation and review](docs/reviews/extra-benchmark-release.md)
+- [Voice processing and measured checks](docs/voice-verification.md)
 - [Accuracy and company readiness audit](docs/reviews/accuracy-readiness-audit.md)
 - [Combined build plan](docs/reviews/build-plan-review.md)
 - [Build status and remaining work](docs/build-status.md)
@@ -318,7 +356,7 @@ These are local checks, not an organizer score. Hidden questions and future extr
 | AI schema-mapping suggestions | Mappings grounded in the released schema and actual headers; no speculative mapping step. |
 | Specialist approval role | Supervisor reviews every brief with a reason; a separate specialist role is not implemented. |
 | Broader C360 summary contract | Eight summary fields plus linked accounts, cases, notes and feature views. Consent aggregates, 30/90-day counts, per-customer DQ status and reviewed hardship status are not added to the summary. |
-| Voice and orchestration extensions | Recorded transcript evidence is supported; voice audio processing and optional orchestration frameworks remain outside the build. |
+| Voice and orchestration extensions | Provided transcript summaries plus optional verified audio playback and local Whisper speech-to-text. Generated cues require human inspection and do not change decisions; orchestration frameworks remain outside the build. |
 
 The application still requires supervisor approval for every brief. It does not initiate customer contact or make programme eligibility decisions automatically.
 
@@ -328,10 +366,10 @@ The question planner supports defined metrics and policy topics rather than unre
 
 If the app reports that the dataset is not ready, finish `scripts/build_data.py`. If brief generation reports that the model is missing, stop the backend, run `scripts/train_model.py`, then restart it. If requests fail, check that the backend is running on port 8000 and the frontend on port 3000.
 
-The architecture and nine-slide presentation PDF are prepared. The user will record a **demo video of at most five minutes** using the walkthrough. Browser verification, accessible video upload and the 19:00 extra-question benchmark run remain. Invite **`cibchack26` by 17:00 IST** through the owner's GitHub collaborator settings; the owner confirmed the invitation appears in repository access; acceptance has not been independently checked. Keep the repository private. The final form allows **one submission per team**, requiring the repo link, code ZIP, accessible video link and presentation PDF. No form submission or external deployment has been performed. The build deadline is **4 October 2026 at 21:00 IST**; later commits are excluded.
+The architecture and nine-slide presentation PDF are prepared. The user will record a **demo video of at most five minutes** using the walkthrough. The 50-question benchmark is complete. Browser rehearsal and accessible video upload remain. Invite **`cibchack26` by 17:00 IST** through the owner's GitHub collaborator settings; the owner confirmed the invitation appears in repository access; acceptance has not been independently checked. Keep the repository private. The final form allows **one submission per team**, requiring the repo link, code ZIP, accessible video link and presentation PDF. No form submission or external deployment has been performed. The build deadline is **4 October 2026 at 21:00 IST**; later commits are excluded.
 
 ## AI tool disclosure
 
-Codex coordinates implementation, integrates modules and independently checks the result. Claude Opus 5.5 at high effort provided architecture, improvement-plan and runtime reviews, implemented the original frontend, and implemented the extractive policy/transcript formatting module. Actual response metadata was checked. The larger Claude insight implementation attempts did not complete; Codex implemented and verified the engine and metric compiler. The original Feature Dev architect consultation used its default Sonnet subagent. Raw prompts and responses remain local and ignored by Git.
+Codex coordinates implementation, integrates modules and independently checks the result. Claude Opus 5.5 at high effort provided architecture, improvement-plan, runtime, voice and final metric reviews, implemented the original frontend, and implemented the extractive policy/transcript formatting module. Actual response metadata was checked. The larger Claude insight implementation attempts did not complete; Codex implemented and verified the engine and metric compiler. The original Feature Dev architect consultation used its default Sonnet subagent. Raw prompts and responses remain local and ignored by Git.
 
 These tools assisted development and are separate from the application's runtime models. Optional Gemini assistance requires a locally configured key; the local classifier, calculations and review workflow remain available without one. Provider failures and invalid responses are tested with mocked HTTP. A live Gemini call remains unverified until the key is available; mocked checks do not establish provider availability or server-side schema compatibility.

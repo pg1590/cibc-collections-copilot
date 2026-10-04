@@ -38,8 +38,8 @@ def _entry(description, groupings, time_basis, denominator, **extra):
 
 
 CATALOG = {
-    "promise_kept_rate": _entry("Kept promises / resolved promises, by due date.", ["none", "queue", "product", "site"], "promise due date", "kept, partially_kept and broken promises"),
-    "broken_promise_rate": _entry("Broken promises / resolved promises, by due date.", ["none", "queue", "product", "site", "prior_broken"], "promise due date", "kept, partially_kept and broken promises"),
+    "promise_kept_rate": _entry("Kept promises / resolved promises, by due date.", ["none", "queue", "product", "site", "channel"], "promise due date", "kept, partially_kept and broken promises"),
+    "broken_promise_rate": _entry("Broken promises / resolved promises, by due date.", ["none", "queue", "product", "site", "channel", "prior_broken"], "promise due date", "kept, partially_kept and broken promises"),
     "rpc_rate": _entry("Right-party contacts / outbound call attempts.", ["none", "hour", "channel", "agent_site"], "contact date", "outbound calls"),
     "ptp_rate": _entry("Promises recorded per right-party contact.", ["none", "channel", "agent_site"], "contact date", "right-party non-system contacts"),
     "cost_per_contact": _entry("Contact costs / non-system contact records.", ["none", "channel", "agent_site"], "contact date", "non-system contact records"),
@@ -51,6 +51,11 @@ CATALOG = {
     "delinquency_rate": _entry("Card accounts 1+ DPD / active or blocked cards with known DPD.", ["none", "product", "bucket"], "snapshot", "active/blocked card accounts with nonmissing DPD", snapshot_only=True, scope="cards only; lending has no authoritative active-status field"),
     "write_off_rate": _entry("Accounts charged off in period / accounts in the extract register.", ["none", "product"], "charge-off date", "all extracted card and loan account records; not period-start balances"),
     "open_cases": _entry("Currently open cases (no recorded outcome).", ["none", "queue", "bucket", "product"], "snapshot", "source-wide collections cases", snapshot_only=True, extension=True),
+    "open_overdue_amount": _entry("Total recorded overdue CAD on currently open cases.", ["none", "queue", "product"], "snapshot", "open cases with recorded total_overdue", snapshot_only=True, extension=True),
+    "open_hardship_cases": _entry("Count currently open cases with a recorded hardship flag.", ["none", "queue", "product"], "snapshot", "open cases with hardship_flag=true; not reviewed eligibility", snapshot_only=True, extension=True),
+    "open_insolvency_cases": _entry("Count and overdue CAD on currently open cases with insolvency hold.", ["none", "queue", "product"], "snapshot", "open cases with insolvency_hold_flag=true", snapshot_only=True, extension=True),
+    "average_days_to_cure": _entry("Mean recorded days from case opening to cure among cases curing in period.", ["none", "queue", "product"], "cure date", "cure_flag=true and cure_date in period; average excludes missing days_to_cure", extension=True),
+    "sms_payment_link_click_share": _entry("Clicked payment-link SMS send events / outbound SMS send events with a payment_link_id.", ["none"], "SMS send contact date", "outbound SMS contact rows with non-null payment_link_id; repeated sends count separately", extension=True),
 }
 
 _ALLOWED = {"metric_id", "grouping", "start_date", "end_date", "filters", "clarification", "refuse", "refuse_reason"}
@@ -121,13 +126,14 @@ def compile_plan(spec: dict) -> CompiledPlan:
     note = "Dates use an inclusive start and exclusive end. Source-wide curated records are used."
     case_groups = {"none": None, "queue": ("coalesce(c.queue,'unknown')", "queue"), "bucket": ("coalesce(c.current_bucket,'unknown')", "current_bucket"), "product": ("coalesce(c.primary_product,'unknown')", "primary_product"), "province": ("coalesce(c.province_code,'unknown')", "province_code")}
     if metric in ("promise_kept_rate", "broken_promise_rate"):
-        groups = {"none": None, "queue": ("coalesce(c.queue,'unknown')", "queue"), "product": ("coalesce(p.product,'unknown')", "product"), "site": ("CASE WHEN p.agent_id IS NULL THEN 'self_serve' ELSE coalesce(a.site,'unknown') END", "site"), "prior_broken": ("least(p.prior_broken_ptp_count,3)", "prior_broken")}
+        groups = {"none": None, "queue": ("coalesce(c.queue,'unknown')", "queue"), "product": ("coalesce(p.product,'unknown')", "product"), "site": ("CASE WHEN p.agent_id IS NULL THEN 'self_serve' ELSE coalesce(a.site,'unknown') END", "site"), "channel": ("coalesce(p.ptp_channel,'unknown')", "ptp_channel"), "prior_broken": ("least(p.prior_broken_ptp_count,3)", "prior_broken")}
         joins = " LEFT JOIN curated.collections_cases c USING(case_id)" if grouping == "queue" else " LEFT JOIN curated.agents a USING(agent_id)" if grouping == "site" else ""
         status = "kept" if metric == "promise_kept_rate" else "broken"
         alias = "promise_kept_rate_pct" if status == "kept" else "broken_rate_pct"
         sql = _select(groups[grouping], f"round(100.0*sum(CASE WHEN p.ptp_status='{status}' THEN 1 ELSE 0 END)/nullif(count(*),0),1) {alias}", "count(*) resolved_promises", "curated.promises_to_pay p" + joins, f"p.ptp_due_date>=? AND p.ptp_due_date<? AND p.ptp_status IN {RESOLVED}")
         note += " Open/cancelled promises are excluded; unknown groups retain unlinked source records. Queue/site reflect the extract's reference values."
         if grouping == "prior_broken": note += " prior_broken=3 denotes three or more; null remains unknown."
+        if grouping == "channel": note += " Channel is where the promise was taken (ptp_channel), not a joined contact channel."
     elif metric in ("rpc_rate", "ptp_rate", "cost_per_contact", "cost_per_rpc"):
         groups = {"none": None, "hour": ("h.contact_hour_local", "contact_hour_local"), "channel": (CHANNEL, "channel"), "agent_site": ("CASE WHEN h.agent_id IS NULL THEN 'self_serve' ELSE coalesce(a.site,'unknown') END", "agent_site")}
         joins = " LEFT JOIN curated.agents a USING(agent_id)" if grouping == "agent_site" else ""
@@ -144,7 +150,7 @@ def compile_plan(spec: dict) -> CompiledPlan:
             expr, count = "round(sum(h.contact_cost_cad)/nullif(sum(CASE WHEN h.rpc_flag THEN 1 ELSE 0 END),0),2) cost_per_rpc_cad", "sum(CASE WHEN h.rpc_flag THEN 1 ELSE 0 END) right_party_contacts"
         sql = _select(groups[grouping], expr, count, "curated.contact_history h" + joins, where)
         note += " Contact periods use recorded local timestamps; channel_v2 takes precedence over legacy channel."
-    elif metric in ("hardship_rate", "cure_rate", "average_dpd", "open_cases"):
+    elif metric in ("hardship_rate", "cure_rate", "average_dpd", "open_cases", "open_overdue_amount", "open_hardship_cases", "open_insolvency_cases", "average_days_to_cure"):
         if metric == "hardship_rate":
             expr, count, where = "round(100.0*sum(CASE WHEN c.hardship_flag THEN 1 ELSE 0 END)/nullif(count(*),0),1) hardship_rate_pct", "count(*) cases", "c.case_open_date>=? AND c.case_open_date<?"
             note += " Recorded hardship flags are not independently reviewed hardship determinations."
@@ -158,11 +164,29 @@ def compile_plan(spec: dict) -> CompiledPlan:
             expr, count, where = "round(avg(c.current_dpd),1) avg_dpd", "count(*) cases_with_dpd", "c.outcome IS NULL AND c.current_dpd IS NOT NULL"
             params = []
             note = f"Current source-wide cases at {SNAPSHOT}; missing current DPD is excluded."
+        elif metric == "average_days_to_cure":
+            expr, count, where = "round(avg(c.days_to_cure),2) average_days_to_cure", "count(*) cured_cases, count(c.days_to_cure) cases_with_days_to_cure", "c.cure_flag AND c.cure_date>=? AND c.cure_date<?"
+            note += " The period filters cure_date, not opening or outcome date; days_to_cure is the recorded opening-to-cure duration. This requested cured-case population does not inherit the distinct cure-rate hold exclusions."
+        elif metric in ("open_overdue_amount", "open_hardship_cases", "open_insolvency_cases"):
+            params = []
+            where = "c.outcome IS NULL"
+            if metric == "open_hardship_cases":
+                expr, count = "count(*) open_hardship_cases", None
+                where += " AND c.hardship_flag"
+                note = f"Open hardship-flagged cases at {SNAPSHOT}; recorded flags are not reviewed eligibility determinations. Contact/insolvency holds remain included in this descriptive count."
+            else:
+                expr, count = "round(sum(c.total_overdue),2) overdue_cad", "count(*) open_cases, count(c.total_overdue) cases_with_overdue"
+                if metric == "open_insolvency_cases":where += " AND c.insolvency_hold_flag"
+                note = f"Open means no recorded outcome at {SNAPSHOT}. Uses recorded total_overdue in CAD; missing amounts are excluded from the sum and reported by the non-null count."
+                if metric == "open_insolvency_cases":note += " Includes only cases with insolvency_hold_flag=true; no contact action is authorized."
         else:
             expr, count, where = "count(*) open_cases", None, "c.outcome IS NULL"
             params = []
             note = f"Open means no recorded outcome at {SNAPSHOT}. Source bucket labels are retained; discrepancies are reported in data quality."
         sql = _select(case_groups[grouping], expr, count, "curated.collections_cases c", where)
+    elif metric == "sms_payment_link_click_share":
+        sql = _select(None, "round(100.0*sum(CASE WHEN h.link_clicked_flag THEN 1 ELSE 0 END)/nullif(count(*),0),2) sms_payment_link_clicked_pct", "count(*) payment_link_sms_sent, sum(CASE WHEN h.link_clicked_flag THEN 1 ELSE 0 END) clicked_sms", "curated.contact_history h", f"{CHANNEL}='sms' AND h.direction='outbound' AND h.payment_link_id IS NOT NULL AND h.contact_ts_local>=? AND h.contact_ts_local<?")
+        note += " The cohort is SMS send events with a payment link, not all SMS or distinct link IDs; repeated sends count separately. Missing click flags count as not clicked. Click flags reflect the extract snapshot, rather than clicks occurring only inside the send-date period."
     elif metric == "contact_attempts_per_case":
         joins = " LEFT JOIN curated.collections_cases c USING(case_id)" if grouping != "none" else ""
         sql = _select(case_groups[grouping], "round(count(*)*1.0/nullif(count(DISTINCT h.case_id),0),2) attempts_per_case", "count(DISTINCT h.case_id) contacted_cases, count(*) outbound_attempts", "curated.contact_history h" + joins, "h.direction='outbound' AND h.contact_ts_local>=? AND h.contact_ts_local<? AND h.case_id IS NOT NULL")
@@ -179,4 +203,5 @@ def compile_plan(spec: dict) -> CompiledPlan:
         note += " Denominator is the full extracted account register, including closed accounts; not a historical period-start account inventory or annualized rate."
     else:  # Catalog additions require an explicit reviewed compiler branch.
         raise PlanError("This catalog metric has no reviewed SQL compiler.")
-    return CompiledPlan(sql, params, note, {"metric_id": metric, "grouping": grouping, "start_date": start.isoformat(), "end_date": end.isoformat(), "definition_source": "data/metric_definitions.csv", "denominator": CATALOG[metric]["denominator"]})
+    definition = "schema/schema.json; reviewed application extension" if CATALOG[metric].get("extension") else "data/metric_definitions.csv"
+    return CompiledPlan(sql, params, note, {"metric_id": metric, "grouping": grouping, "start_date": start.isoformat(), "end_date": end.isoformat(), "definition_source": definition, "denominator": CATALOG[metric]["denominator"]})

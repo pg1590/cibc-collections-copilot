@@ -115,7 +115,7 @@ def generate(output):
     item(52, 362, 390, 'Information across systems',
          'Profiles, cards, loans, deposits and collections use different IDs and formats.')
     item(52, 238, 390, 'Relevant assistance',
-         'A combined view shows accounts, cases and recent notes. Each recommendation includes its supporting facts.')
+         'A combined view shows accounts, cases, notes and optional call audio. Recommendations include supporting facts.')
     text(525, 364, 380, '1   Open the customer view<br/><br/>2   Inspect facts and sources<br/><br/>3   Generate a review brief<br/><br/>4   Record a supervisor decision', 21, maximum=280)
     text(52, 106, 856, 'Pilot measures: time per case, factual errors, missed hardship and supervisor corrections. Business improvement remains to be measured.', 17, MUTED, maximum=52)
     c.showPage()
@@ -124,8 +124,8 @@ def generate(output):
     page(3, 'Four connected layers', 'Batch preparation supplies the local API and review workflow.')
     nodes = [
         (52, 282, '1  Data Product Factory', 'Normalize sources and match IDs<br/>DuckDB raw, curated and C360'),
-        (528, 282, '2  Insight and NLP', 'Validated plans; optional Gemini<br/>Local SQL and cited policy answers'),
-        (52, 111, '3  Feature Store', 'Case, payment and financial text cues<br/>Shared versioned definitions'),
+        (528, 282, '2  Insight and NLP', 'Local SQL and cited policies<br/>Optional local Whisper audio evidence'),
+        (52, 111, '3  Feature Store', 'Financial text and ASR review cues<br/>Shared versioned definitions'),
         (528, 111, '4  Models and Decisioning', 'Classifier + explicit hardship rules<br/>Supervisor decision and SQLite audit'),
     ]
     for x, y, label, body in nodes:
@@ -216,7 +216,7 @@ def generate(output):
         ('Generated benchmark rows', f'{len(benchmark)} rows, {sum(r["refused"] == "true" for r in benchmark)} refusals'),
         ('Core, role, provider and evidence tests', f"{passed} automated tests passed"),
         ('Offline / live feature definitions', f'{parity["checked"]} customers, {parity["mismatches"]} mismatches'),
-        ('Frontend checks', 'Typecheck, lint and build passed'),
+        ('Frontend and voice integration', 'Build, WAV and ASR HTTP checks pass'),
     ]
     for i, (label, value) in enumerate(rows):
         top = 364 - i * 49
@@ -224,7 +224,7 @@ def generate(output):
         text(530, top, 378, escape(value), 18, TEAL, maximum=45)
     extra = len(benchmark) - len(released)
     extra_text = f'{extra} extra question rows included.' if extra else 'The 15 extra questions are pending the 19:00 release.'
-    text(52, 96, 856, escape(extra_text) + '<br/>Limits: live provider check, programme eligibility and multi-user capacity.',
+    text(52, 96, 856, escape(extra_text) + '<br/>Limits: ASR requires review; live provider, eligibility and capacity remain unverified.',
          17, RED, maximum=58)
     c.showPage()
 
@@ -240,7 +240,7 @@ def generate(output):
     item(538, 205, 370, 'Controlled rollout',
          'Integrate company login and monitor data quality, feature versions and model drift.', 19)
     text(52, 84, 856,
-         '<b>Development:</b> Codex implementation/verification; Claude Opus 5.5 reviews, frontend and extractive summaries. <b>Runtime:</b> local classifier/SQL; optional Gemini, live verification pending.',
+         '<b>Development:</b> Codex implementation/verification; Claude Opus 5.5 reviews, frontend and extractive summaries. <b>Runtime:</b> local classifier/SQL/Whisper; optional Gemini, live verification pending.',
          14, MUTED, maximum=42)
     c.showPage(); c.save()
     reader = PdfReader(output)

@@ -12,8 +12,9 @@ import duckdb
 import joblib
 from fastapi import Depends,FastAPI,HTTPException,Query
 from fastapi.security import HTTPAuthorizationCredentials,HTTPBearer
+from fastapi.responses import Response
 from pydantic import BaseModel,Field
-from app import storage, runtime
+from app import storage, runtime, voice
 from app.features import VERSION,TEXT_FEATURES,feature_sql,evidence,definitions,text_features
 from app.settings import DATASET,DB,QUALITY,MODEL,MODEL_REPORT,ROOT,SNAPSHOT
 
@@ -43,6 +44,7 @@ def user(creds:HTTPAuthorizationCredentials=Depends(bearer)):
     if not creds:raise HTTPException(401,'Sign in to continue.')
     u=storage.session(creds.credentials)
     if not u:raise HTTPException(401,'Session expired. Sign in again.')
+    if u.get('role') not in ['analyst','agent','supervisor']:raise HTTPException(403,'This role is not permitted.')
     return u
 
 
@@ -78,7 +80,7 @@ class Login(BaseModel):
 @app.get('/api/health')
 def health():
     configured=runtime.provider().configured
-    return {'status':'ok','dataset_ready':QUALITY.exists() and DB.exists(),'snapshot_date':SNAPSHOT,'runtime_mode':'optional Gemini; local calculations and classifier' if configured else 'local; no external API key','gemini_configured':configured}
+    return {'status':'ok','dataset_ready':QUALITY.exists() and DB.exists(),'snapshot_date':SNAPSHOT,'runtime_mode':'optional Gemini; local calculations and classifier' if configured else 'local; no external API key','gemini_configured':configured,'speech_to_text_available':voice.speech_available()}
 
 
 @app.post('/api/auth/login')
@@ -128,6 +130,100 @@ def customer(cid:str,u=Depends(user)):
         notes=records(c,'SELECT note_id,note_ts,note_text,note_language,case_id FROM gold.latest_notes WHERE customer_id=?',[cid])
         features=records(c,'SELECT * FROM gold.features WHERE customer_id=?',[cid])[0] if c.execute("SELECT 1 FROM information_schema.tables WHERE table_schema='gold' AND table_name='features'").fetchone() else {}
     return {'customer':profile,'accounts':accounts,'cases':cases,'identity':links,'notes':notes,'features':features,'snapshot_date':SNAPSHOT}
+
+
+VOICE_COLUMNS = '''v.voice_sample_id,v.transcript_id,v.file_path,v.file_size_bytes,
+ v.checksum_sha256,v.duration_sec,v.language,t.case_id,t.call_start_ts,g.customer_id'''
+VOICE_JOIN = '''FROM curated.voice_samples v
+ JOIN curated.call_transcripts t ON t.transcript_id=v.transcript_id
+  AND t.voice_sample_id=v.voice_sample_id AND t.contact_id=v.contact_id
+ JOIN gold.cases g ON g.case_id=t.case_id
+ JOIN gold.crm_identity i ON i.crm_customer_id=t.crm_customer_id AND i.customer_id=g.customer_id'''
+
+
+def voice_scope(c,u):
+    if u['role'] not in ['analyst','agent','supervisor']:
+        raise HTTPException(403,'This role cannot access recordings.')
+    if u['role']=='agent':
+        return ' AND g.assigned_agent_id=?',[agent_id(c)]
+    return '',[]
+
+
+def recording(voice_id,u):
+    with db() as c:
+        condition,params=voice_scope(c,u)
+        rows=records(c,f'''SELECT DISTINCT {VOICE_COLUMNS} {VOICE_JOIN}
+          WHERE v.voice_sample_id=? AND t.call_start_ts<TIMESTAMP '2026-09-29' {condition}''',[voice_id,*params])
+    if len(rows)!=1:
+        raise HTTPException(404,'Recording was not found in your permitted cases.')
+    return rows[0]
+
+
+def verify_recording(source):
+    try:
+        return voice.verified_audio(DATASET,source)
+    except FileNotFoundError:
+        raise HTTPException(404,'Optional voice pack is not installed for this recording.') from None
+    except (voice.VoiceError,OSError):
+        raise HTTPException(422,'The recording failed its source integrity or WAV checks.') from None
+
+
+@app.get('/api/customers/{cid}/voice')
+def customer_voice(cid:str,u=Depends(user)):
+    with db() as c:
+        authorize_customer(c,u,cid)
+        condition,params=voice_scope(c,u)
+        rows=records(c,f'''SELECT DISTINCT {VOICE_COLUMNS} {VOICE_JOIN}
+         WHERE g.customer_id=? AND t.call_start_ts<TIMESTAMP '2026-09-29' {condition}
+         ORDER BY t.call_start_ts DESC,v.voice_sample_id LIMIT 20''',[cid,*params])
+    items=[{key:row[key] for key in ['voice_sample_id','transcript_id','case_id','call_start_ts','language','duration_sec']} |
+           {'audio_available':voice.audio_available(DATASET,row)} for row in rows]
+    return {'items':items,'speech_to_text_available':voice.speech_available(),
+            'speech_model':'Local Whisper (CPU int8)',
+            'note':'Synthetic source recordings. Generated transcripts and mixed-speaker financial cues require human review; they do not change customer decisions.'}
+
+
+@app.get('/api/voice/{voice_id}/audio')
+def recording_audio(voice_id:str,u=Depends(user)):
+    source=recording(voice_id,u)
+    _,content,checksum,_=verify_recording(source)
+    with storage.connect() as s:
+        storage.audit(s,u['username'],'play_recording',voice_id,{'case_id':source['case_id'],'source_sha256':checksum})
+    return Response(content,media_type='audio/wav',headers={'Cache-Control':'private, no-store',
+                    'X-Content-Type-Options':'nosniff','Content-Disposition':f'inline; filename="{source["voice_sample_id"]}.wav"'})
+
+
+@app.get('/api/voice/{voice_id}/transcription')
+def recording_transcription(voice_id:str,u=Depends(user)):
+    source=recording(voice_id,u)
+    _,_,checksum,_=verify_recording(source)
+    try:
+        result=voice.transcription_status(source|{'checksum_sha256':checksum})
+    except RuntimeError:
+        raise HTTPException(503,'Local speech model is incomplete. Run scripts/setup_voice.py.') from None
+    if result['status']=='completed':
+        with storage.connect() as s:
+            storage.audit(s,u['username'],'view_voice_transcript',voice_id,{'case_id':source['case_id'],'source_sha256':checksum})
+    return result
+
+
+@app.post('/api/voice/{voice_id}/transcribe')
+def transcribe_recording(voice_id:str,u=Depends(user)):
+    source=recording(voice_id,u)
+    verify_recording(source)
+    try:
+        result=voice.start_transcription(DATASET,source)
+    except RuntimeError:
+        raise HTTPException(503,'Local speech model is not ready. Install requirements-voice.txt and run scripts/setup_voice.py.') from None
+    except OverflowError as exc:
+        raise HTTPException(429,str(exc)) from None
+    except (voice.VoiceError,OSError):
+        raise HTTPException(422,'The recording failed its source integrity or WAV checks.') from None
+    with storage.connect() as s:
+        storage.audit(s,u['username'],'transcribe_recording',voice_id,{'case_id':source['case_id'],
+          'source_sha256':source['checksum_sha256'],'status':result['status'],'job_id':result.get('job_id'),
+          'review_required':True,'decision_inputs_changed':False})
+    return result
 
 
 class Ask(BaseModel):question:str=Field(min_length=3,max_length=1500)

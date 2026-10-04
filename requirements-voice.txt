@@ -1,0 +1,2 @@
+# Optional local, CPU speech recognition; no paid API or system FFmpeg required.
+faster-whisper==1.2.1

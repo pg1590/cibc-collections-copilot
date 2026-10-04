@@ -6,6 +6,7 @@ import { ArrowLeft, FileText } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { KeyValueList, RecordTable } from "@/components/record-table";
 import { ErrorState, LoadingState } from "@/components/states";
+import { VoiceEvidence } from "@/components/voice-evidence";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -122,6 +123,8 @@ export default function CustomerDetailPage() {
         <Section title="Notes and evidence" description="Agent notes and interaction evidence from source systems.">
           <RecordTable records={notes} caption="Notes" emptyTitle="No notes returned" />
         </Section>
+
+        <VoiceEvidence key={customer.customer_id} customerId={customer.customer_id} />
 
         <Section
           title="Features"

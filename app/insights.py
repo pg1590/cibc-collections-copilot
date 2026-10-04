@@ -15,6 +15,7 @@ from app.settings import SNAPSHOT
 from app.metric_plans import CATALOG, PlanError, PlanRefusal, compile_plan
 from app.gemini import ProviderUnavailable
 from app.policy_summary import summarize_policy, summarize_transcript
+from app.features import normalize_text
 
 ASOF=date.fromisoformat(SNAPSHOT)
 MONTHS={m.lower():i for i,m in enumerate(calendar.month_name) if m}
@@ -33,7 +34,7 @@ def month_mentions(q):
 
 
 def explicit_period(q):
-    return bool(month_mentions(q) or re.search(r'\b20\d{2}\b|\bq[1-4]\b|last month|previous month|this month|this year|last year|since',q))
+    return bool(month_mentions(q) or re.search(r'\b20\d{2}\b|\bq[1-4]\b|last month|previous month|this month|this year|last year|since|year[- ]to[- ]date|\bytd\b|\b(last|past|previous|trailing|rolling)\b.*\b(days?|weeks?|months?|years?)\b',q))
 
 
 def prior_broken_cohort(q):
@@ -44,9 +45,52 @@ def thirty_day_cure(q):
     return 'cure' in q and bool(re.search(r'within\s+30\s+days?|30[- ]day\s+cure|cure.*in\s+30\s+days?',q))
 
 
+def _cohort_guards(q,metric):
+    """Apply the same explicit-cohort limits to local and provider plans."""
+    if CATALOG.get(metric,{}).get('snapshot_only') and re.search(r'\bopened|\bopening',q):
+        raise PlanError('Snapshot case/account metrics cannot substitute for an opening-date cohort.')
+    if metric=='average_days_to_cure' and re.search(r'\bopened|\bopening|\bwithin\s+\d+\s+days?',q):
+        raise PlanError('Average cure time uses cases curing in the period. Opening-date cohorts and maximum cure-time filters require a separate definition.')
+    if metric=='sms_payment_link_click_share' and not re.search(r'\bclick\w*\b',q):
+        raise PlanError('This metric measures clicked payment-link SMS sends. Other link shares or payment rates need a separate definition.')
+    if metric not in ['delinquency_rate','write_off_rate'] and re.search(r'\bvisa|\bmastercard|\bamex|\b(?:cards?|loans?|mortgages?)\b|line[- ]of[- ]credit|credit lines?|late[- ]stage|early[- ]stage',q):
+        raise PlanError('A named product or stage is a cohort filter. Request a supported grouping over the documented population.')
+    if metric=='open_insolvency_cases' and re.search(r'bankrupt|consumer proposal',q):
+        raise PlanError('The insolvency hold flag does not distinguish bankruptcy from consumer proposals. Ask for all open cases on insolvency hold.')
+    remaining=q
+    if metric=='open_insolvency_cases':remaining=re.sub(r'insolvency\s+hold','',remaining)
+    if re.search(r'\bhold\b|deceased|cease[- ]contact|bankrupt|consumer proposal|\bvulnerab|\bcomplaint|\bfraud|\bdisput|\bprogramme?\b',remaining):
+        raise PlanError('Additional hold, programme or sensitive case-status filters require a separately defined cohort.')
+    if re.search(r'\b\d+\s*[-–]\s*\d+\s*(?:dpd|days|bucket)|\b(?:in|only|with)\b.{0,20}\bbucket\s+\d+',q):
+        raise PlanError('A named DPD bucket is a filter rather than a grouping; this cohort requires a separate definition.')
+    if metric in ['open_hardship_cases','open_insolvency_cases'] and re.search(r'\b(?:not|without|exclude|excluding|except|no)\b.{0,45}\b(?:hardship|insolvency|bankruptcy|hold)\b|\b(?:hardship|insolvency|bankruptcy|hold)\b.{0,25}\b(?:false|absent)\b',q):
+        raise PlanError('This snapshot metric counts cases with the recorded flag. A negated or excluded flag requires a separately defined cohort.')
+    if metric=='broken_promise_rate' and re.search(r'\bnumber of broken|\bhow many broken|\bcount.*broken',q) and not re.search(r'\brate\b|\bshare\b',q):
+        raise PlanError('Please clarify whether you need a count or a broken-promise rate; this metric compiler returns the rate among resolved promises.')
+    if metric not in ['hardship_rate','open_hardship_cases'] and re.search(r'\bhardship\b',q):raise PlanError('Filtering this metric to hardship cases/accounts requires a separately defined cohort; please clarify the source flag and population.')
+    if re.search(r'\b(ontario|quebec|québec|alberta|manitoba|saskatchewan|british columbia|nova scotia|new brunswick|newfoundland|prince edward|toronto|halifax|montreal|montréal|winnipeg|vancouver|calgary|edmonton|ottawa)\b|\b(?:in|from|province)\s+(?:on|qc|ab|bc|mb|sk|ns|nb|nl|pe|yt|nt|nu)\b',q):
+        raise PlanError('A named province/site is a cohort filter, not a grouping. Custom filters need clarification; request a supported grouping over the documented population.')
+    if re.search(r'\b(?:for|among|only|with|without|excluding|exclude|where)\b.*\b(?:late[- ]stage|early[- ]stage|closed|certified|uncertified|french|english|mortgage|gold|platinum|silver|secured|unsecured|1\s*[-–]\s*30)\b',q):
+        raise PlanError('The requested cohort filter is unsupported. Specify the metric population and a supported grouping without custom filters.')
+    if re.search(r'\bopen\s+cases?\b',q) and metric not in ['open_cases','average_dpd','open_overdue_amount','open_hardship_cases','open_insolvency_cases']:
+        raise PlanError('Filtering this metric to currently open cases is not part of its compiled definition; please clarify the intended cohort.')
+    if metric=='cure_rate' and 'opened' in q:
+        raise PlanError('The certified cure rate uses cases open at the start of a calendar period. For cases opened during a month, please specify the follow-up window, such as 30 days from opening.')
+    if metric=='delinquency_rate' and re.search(r'loan|lending|all accounts|mortgage|lines? of credit|\bloc\b',q):
+        raise PlanError('This snapshot calculation supports active card accounts. The lending extract has no authoritative active-status field for this denominator.')
+    if metric=='delinquency_rate' and re.search(r'\b(?:[2-9]|\d{2,})\s*\+?\s*(?:days? past due|dpd)|\b90\+|\b30\+|\b60\+',q):
+        raise PlanError('The certified delinquency rate is 1+ DPD. A different DPD threshold needs a separately defined metric.')
+    if metric=='delinquency_rate':
+        thresholds=re.findall(r'\b(\d+)\s*(?:\+|or more|and above)?\s*(?:days? past due|dpd)|\bdpd\s*[>=]{1,2}\s*(\d+)',q)
+        if any(int(a or b)!=1 for a,b in thresholds):raise PlanError('The certified delinquency rate is 1+ DPD; other thresholds require a separately defined metric.')
+
+
 def date_range(question):
     """Resolve explicit months/ISO dates and snapshot-relative months."""
     q=question.lower();years=re.findall(r'\b(20\d{2})\b',q);year=int(years[-1]) if years else ASOF.year
+    if re.search(r'year[- ]to[- ]date|\bytd\b',q):return date(ASOF.year,1,1),ASOF+timedelta(days=1)
+    if re.search(r'\b(last|past|previous|trailing|rolling)\b.*\b(days?|weeks?|months?|years?)\b',q) and not re.search(r'last month|previous month|last year|(?:last|past|previous|trailing|rolling)\s+12\s+months',q):
+        raise PlanError('Use explicit start and end dates for rolling days, weeks or other relative periods.')
     iso=re.findall(r'\b20\d{2}-\d{2}-\d{2}\b',q)
     if iso:
         try:parsed=[date.fromisoformat(x) for x in iso]
@@ -58,7 +102,37 @@ def date_range(question):
         if re.search(r'\bsince\b|\bfrom\b',q):return parsed[0],ASOF+timedelta(days=1)
         if re.search(r'\bon\b|\bas of\b',q):return parsed[0],parsed[0]+timedelta(days=1)
         raise PlanError('For a single date, specify on that date or since that date; otherwise provide two ISO endpoints.')
+    month_pattern='|'.join(sorted(MONTHS,key=len,reverse=True))
+    same_month=re.search(r'\b(\d{1,2})(?:st|nd|rd|th)?\s*(?:and|to|through|[-–])\s*(\d{1,2})(?:st|nd|rd|th)?\s+('+month_pattern+r')\b',q)
+    named=list(re.finditer(r'\b(\d{1,2})(?:st|nd|rd|th)?\s+('+month_pattern+r')\b(?:\s+(20\d{2}))?',q))
+    try:
+        if same_month:
+            first=date(year,MONTHS[same_month[3]],int(same_month[1]));last=date(year,MONTHS[same_month[3]],int(same_month[2]))
+            if first>last:raise PlanError('The period start must precede the end.')
+            return first,last+timedelta(days=1)
+        if len(named)==2:
+            first,last=[date(int(m[3]) if m[3] else year,MONTHS[m[2]],int(m[1])) for m in named]
+            if first>last:raise PlanError('The period start must precede the end.')
+            return first,last+timedelta(days=1)
+        if len(named)>2:raise PlanError('Please specify exactly two period endpoints.')
+        if named:
+            m=named[0];first=date(int(m[3]) if m[3] else year,MONTHS[m[2]],int(m[1]))
+            trailing=re.search(r'\b(\d{1,2})\s+months?\s+(?:to|ending|ended|through)\s+',q)
+            if trailing:
+                months=int(trailing[1])
+                if months<1:raise PlanError('Use a positive number of months.')
+                end=first+timedelta(days=1)
+                ordinal=end.year*12+end.month-1-months
+                past_year,past_month=divmod(ordinal,12);past_month+=1
+                return date(past_year,past_month,min(end.day,calendar.monthrange(past_year,past_month)[1])),end
+            if re.search(r'\bsince\b|\bfrom\b',q):return first,ASOF+timedelta(days=1)
+            if re.search(r'\bon\b|\bas of\b|\bdue\b',q):return first,first+timedelta(days=1)
+            raise PlanError('For a single named day, specify on that date or since that date, or supply both period endpoints.')
+    except PlanError:raise
+    except ValueError:raise PlanError('Please use valid calendar days for the requested period.') from None
     found=[(m.start(),MONTHS[m.group(0)]) for m in month_mentions(q)]
+    if re.search(r'\b\d{1,2}\s+months?\s+(?:to|ending|ended|through)\s+',q):
+        raise PlanError('For a trailing month window, specify the ending day as well as the month and year.')
     if len(set(years))>1:raise PlanError('For a period spanning different years, please provide two ISO date endpoints.')
     if 'last month' in q or 'previous month' in q:
         end=ASOF.replace(day=1);return (end-timedelta(days=1)).replace(day=1),end
@@ -124,12 +198,15 @@ class InsightEngine:
 
     @staticmethod
     def _refusal(q):
+        q=normalize_text(q)
         if re.search(r'weather|forecast.*(toronto|tomorrow)|sports|bitcoin|stock price',q):return 'This question is outside the collections dataset and policies.'
         if re.search(r'\b(sue|lawsuit|legal advice)\b',q):return 'I cannot give a legal decision about suing a customer. Refer the case to the authorized legal/compliance team.'
-        protected=re.search(r'\b(gender|marital|citizenship|newcomer|ethnic\w*|religion|accent|disability|accessibility|age|race|sex|language|french|english)\b|customers?\s+(?:over|under|older than|younger than)\s+\d+',q)
-        if protected and re.search(r'\brank|prioriti[sz]|\btarget|\bexclude|\bdeny|\blist|\bexport|\bshow|\bby\b|called first|call.*first|\bdisclose',q):return 'Protected attributes cannot be used to rank customers, make collection decisions or disclose individual sensitive attributes.'
-        if re.search(r'(stop|exclude|deny|withdraw|withhold).*hardship|hardship.*(stop offering|exclude|deny)',q):return 'Hardship support cannot be denied using geography or a proxy for protected grounds.'
-        if re.search(r'\b(export|list|give|show)\b',q) and re.search(r'\b(every|all)\b',q) and re.search(r'\b(phone|email|address|names)\b',q):return 'Bulk export of customer identifiers and contact details is not permitted.'
+        protected=re.search(r'\b(gender|marital|citizenship|newcomer|ethnic\w*|religion|religious|church|mosque|synagogue|temple|faith|accent|disability|accessibility|age|race|sex|language|french|english|nationality|immigrants?|indigenous|seniors?|elderly|pregnan\w*|genetic\w*|women|men|sexe|origine|handicap|langue)\b|national origin|sexual orientation|family status|mental health|postal code|neighbou?rhood|surname|etat civil|customers?\s+(?:over|under|older than|younger than)\s+\d+',q)
+        decision=r'\brank|prioriti[sz]|\btarget|\bexclude|\bdeny|\blist|\bexport|\bshow|\bby\b|call.*(?:first|last|later)|\bdisclose|\brepayment\b|pay.*(?:reliab|predict)|\bscore|\bsegment|\bweight|\bskip|\bavoid|\bremove|deprioriti|prioriser|cibler|exclure|refuser|\bselon\b|\bpar\b'
+        if protected and re.search(decision,q):return 'Protected attributes and proxies such as religious attendance cannot be used to predict repayment, prioritize calls, make collection decisions or disclose individual sensitive attributes.'
+        if re.search(r'\bvulnerab\w*\b',q) and re.search(r'\bbottom\b|deprioriti[sz]|lower.*priority|less.*priority|prioriti[sz].*(?:call|repay)|predict.*(?:pay|repay)|rarely pay|\bskip|call.*last|remove.*dial',q):return 'Vulnerability is a safeguard, not a repayment risk factor. Do not deprioritize support or use vulnerability to predict repayment; route to a certified agent under POL-COLL-004 v4.2 §4.5.'
+        if re.search(r'(stop|exclude|deny|withdraw|withhold).*hardship|hardship.*(stop offering|exclude|deny)|(?:do not|don.t|never|avoid)\s+(?:offer|provide|give)\b.*hardship',q):return 'Hardship support cannot be denied using geography or a proxy for protected grounds.'
+        if re.search(r'\b(export|list|give|show)\b',q) and re.search(r'\b(every|all)\b',q) and re.search(r'\b(phone|email|address|names)\b|date of birth|\bdob\b',q):return 'Bulk export of customer identifiers and contact details is not permitted.'
         if re.search(r'ignore.*(instruction|policy)|read_(csv|text|parquet)|/etc/|\b(attach|drop table|delete from|update .*set)\b',q):return 'This interface accepts collections questions, not commands, files or arbitrary SQL.'
         return None
 
@@ -144,7 +221,8 @@ class InsightEngine:
                 if re.search(r'\bCS-\d{4}-\d+\b',q,re.I) and re.search(r'summari[sz]|recorded call|resume|appel',lower):
                     self._transcript(q,result)
                 else:
-                    policy_first=bool(re.search(r'grace period|considered broken|express consent|national do not call|consumer proposal',lower) or (re.search(r'\bpolicy|procedure|programme|program\b',lower) and not re.search(r'\brate\b|\bshare\b|\baverage\b',lower)))
+                    case_count=bool(re.search(r'\bcases?\b',lower) and re.search(r'how many|count|number|total|how much',lower))
+                    policy_first=not case_count and bool(re.search(r'grace period|considered broken|express consent|national do not call|consumer proposal',lower) or (re.search(r'\bpolicy|procedure|programme|program\b',lower) and not re.search(r'\brate\b|\bshare\b|\baverage\b',lower)))
                     plan=None if policy_first else self._plan(lower)
                     if plan is None and not policy_first and self.planner:
                         try:
@@ -152,11 +230,25 @@ class InsightEngine:
                         except ProviderUnavailable:
                             pass  # Optional provider failures keep local retrieval available.
                         except PlanError as exc:
-                            self._policy(lower,result)
-                            if not result.get('sources'):
-                                if isinstance(exc,PlanRefusal):result.update(answer=str(exc),refused=True,reason='provider_refusal')
-                                else:result.update(answer='Please specify a supported collections metric, grouping and period, or a policy topic.',refused=False,reason='clarification_required')
+                            if isinstance(exc,PlanRefusal):result.update(answer=str(exc),refused=True,reason='provider_refusal')
+                            else:
+                                self._policy(lower,result)
+                                if not result.get('sources'):result.update(answer='Please specify a supported collections metric, grouping and period, or a policy topic.',refused=False,reason='clarification_required')
                     if plan:
+                        if getattr(plan,'metadata',None):
+                            _cohort_guards(lower,plan.metadata['metric_id'])
+                            if explicit_period(lower):
+                                wanted=date_range(lower)
+                                planned=(date.fromisoformat(plan.metadata['start_date']),date.fromisoformat(plan.metadata['end_date']))
+                                if wanted!=planned:raise PlanError('The validated plan does not preserve the requested period; please clarify the start and end dates.')
+                            grouping_question=re.sub(r'\bby\s+(?:sms|text(?: messages?)?)\b','via SMS',lower) if plan.metadata['metric_id']=='sms_payment_link_click_share' else lower
+                            if re.search(r'\bby\b',grouping_question):
+                                clause=re.split(r'\bby\b',grouping_question,maxsplit=1)[1]
+                                dimensions=[name for name in ['queue','bucket','province','product','channel','hour','site'] if re.search(r'\b'+name+r'\b',clause)]
+                                if len(dimensions)!=1:raise PlanError('Specify one supported grouping dimension.')
+                                wanted_group=dimensions[0]
+                                if wanted_group=='site' and plan.metadata['metric_id'] in ['rpc_rate','ptp_rate','cost_per_contact','cost_per_rpc']:wanted_group='agent_site'
+                                if wanted_group!=plan.metadata['grouping']:raise PlanError('The validated plan does not preserve the requested grouping; please clarify the grouping.')
                         with self._connect() as c:
                             cursor=c.execute(plan.sql,plan.params);columns=[x[0] for x in cursor.description]
                             rows=[dict(zip(columns,row)) for row in cursor.fetchall()]
@@ -238,7 +330,8 @@ class InsightEngine:
             return Plan('SELECT round(100.0*avg(CASE WHEN cure_date>=? AND cure_date<? THEN 1 ELSE 0 END),2) cure_rate_pct,count(*) cases_open_at_start FROM curated.collections_cases WHERE case_open_date<? AND (outcome_date>=? OR outcome IS NULL) AND NOT coalesce(insolvency_hold_flag,false) AND NOT coalesce(deceased_hold_flag,false)',[*period,start,start])
         if 'charged off' in q or 'charge-off' in q or 'write off' in q or 'write-off' in q:
             if re.search(r'\bby\b',q) and not re.search(r'\bby (?:primary )?product',q):raise PlanError('Charge-off counts and amounts support grouping by product only.')
-            trailing=bool(re.search(r'12\s+months|last year',q)) or not explicit_period(q)
+            anchored=bool(re.search(r'\b\d{1,2}\s+months?\s+(?:to|ending|ended|through)\s+',q))
+            trailing=not anchored and (bool(re.search(r'12\s+months|last year',q)) or not explicit_period(q))
             since=date(ASOF.year-1,ASOF.month,ASOF.day)+timedelta(days=1) if trailing else start
             until=ASOF if trailing else end-timedelta(days=1)
             return Plan("""WITH accounts AS(SELECT 'card' product,chargeoff_date,chargeoff_amount FROM curated.card_accounts UNION ALL SELECT product_type,chargeoff_date,chargeoff_amount FROM curated.loan_accounts)
@@ -277,6 +370,8 @@ class InsightEngine:
 
     def _generic_plan(self,q,start,end):
         """Recognize common intents locally; compile the same allowlist as Gemini."""
+        if re.search(r'average|mean',q) and re.search(r'\bcure',q) and re.search(r'\bwithin\s+\d+\s+days?',q):
+            raise PlanError('Average cure time with a maximum-days filter requires a separately defined cohort.')
         if 'cases' in q and re.search(r'\bopened\b',q) and re.search(r'how many|count|number',q):
             raise PlanError('Currently open cases and cases opened during a period are different populations. This count supports currently open cases; an opening-date count needs a separate cohort.')
         # These questions specify different cohorts and retain explicit templates.
@@ -289,7 +384,14 @@ class InsightEngine:
             or ('open cases' in q and re.search(r'attempts|touches',q))):
             return None
         metric=None
-        if re.search(r'broken[- ]promise|broken.*ptp|ptp.*break|promise.*break',q):metric='broken_promise_rate'
+        if re.search(r'\b(?:sms|text messages?)\b',q) and re.search(r'payment[- ]?links?',q):
+            if not re.search(r'click',q):raise PlanError('Please specify clicked payment-link SMS share; other SMS link metrics need a separate definition.')
+            metric='sms_payment_link_click_share'
+        elif re.search(r'average|mean',q) and re.search(r'days? (?:to|until|before) cure|time to cure|cure (?:time|duration)',q):metric='average_days_to_cure'
+        elif re.search(r'\bopen\b',q) and re.search(r'\bcases?\b',q) and re.search(r'\binsolvency\b|\bbankruptcy\b|consumer proposal',q) and re.search(r'how many|count|number|overdue',q):metric='open_insolvency_cases'
+        elif re.search(r'\bopen\b',q) and re.search(r'\bcases?\b',q) and re.search(r'\bhardship\b',q) and re.search(r'how many|count|number',q):metric='open_hardship_cases'
+        elif re.search(r'\bopen\b',q) and re.search(r'\bcases?\b',q) and re.search(r'overdue|past[- ]due amount',q) and re.search(r'total|sum|amount|balance|how much',q):metric='open_overdue_amount'
+        elif re.search(r'broken[- ]promise|broken.*ptp|ptp.*break|promise.*break',q):metric='broken_promise_rate'
         elif re.search(r'promise[- ]kept|ptp.*kept|kept.*promise|promise.*kept|keep rate',q):metric='promise_kept_rate'
         elif 'cost' in q and re.search(r'rpc|right[- ]party|right party',q):metric='cost_per_rpc'
         elif 'cost' in q and re.search(r'contact|channel|attempt',q):metric='cost_per_contact'
@@ -304,27 +406,11 @@ class InsightEngine:
         elif re.search(r'how much.*\bcollect\b|dollars collected|recoveries|amount collected',q):metric='collected_amount'
         elif 'cases' in q and re.search(r'\bopen\b',q) and re.search(r'how many|count|number',q):metric='open_cases'
         if metric is None:return None
-        if metric=='broken_promise_rate' and re.search(r'\bnumber of broken|\bhow many broken|\bcount.*broken',q) and not re.search(r'\brate\b|\bshare\b',q):
-            raise PlanError('Please clarify whether you need a count or a broken-promise rate; this metric compiler returns the rate among resolved promises.')
-        if metric!='hardship_rate' and re.search(r'\bhardship\b',q):raise PlanError('Filtering this metric to hardship cases/accounts requires a separately defined cohort; please clarify the source flag and population.')
-        if re.search(r'\b(ontario|quebec|québec|alberta|manitoba|saskatchewan|british columbia|nova scotia|new brunswick|newfoundland|prince edward|toronto|halifax|montreal|montréal|winnipeg|vancouver|calgary|edmonton|ottawa)\b|\b(?:in|from|province)\s+(?:on|qc|ab|bc|mb|sk|ns|nb|nl|pe|yt|nt|nu)\b',q):
-            raise PlanError('A named province/site is a cohort filter, not a grouping. Custom filters need clarification; request a supported grouping over the documented population.')
-        if re.search(r'\b(?:for|among|only|with|without|excluding|exclude|where)\b.*\b(?:late[- ]stage|early[- ]stage|closed|certified|uncertified|french|english|mortgage|gold|platinum|silver|secured|unsecured|1\s*[-–]\s*30)\b',q):
-            raise PlanError('The requested cohort filter is unsupported. Specify the metric population and a supported grouping without custom filters.')
-        if re.search(r'\bopen\s+cases?\b',q) and metric not in ['open_cases','average_dpd']:
-            raise PlanError('Filtering this metric to currently open cases is not part of its compiled definition; please clarify the intended cohort.')
-        if metric=='cure_rate' and 'opened' in q:
-            raise PlanError('The certified cure rate uses cases open at the start of a calendar period. For cases opened during a month, please specify the follow-up window, such as 30 days from opening.')
-        if metric=='delinquency_rate' and re.search(r'loan|lending|all accounts|mortgage|lines? of credit|\bloc\b',q):
-            raise PlanError('This snapshot calculation supports active card accounts. The lending extract has no authoritative active-status field for this denominator.')
-        if metric=='delinquency_rate' and re.search(r'\b(?:[2-9]|\d{2,})\s*\+?\s*(?:days? past due|dpd)|\b90\+|\b30\+|\b60\+',q):
-            raise PlanError('The certified delinquency rate is 1+ DPD. A different DPD threshold needs a separately defined metric.')
-        if metric=='delinquency_rate':
-            thresholds=re.findall(r'\b(\d+)\s*(?:\+|or more|and above)?\s*(?:days? past due|dpd)|\bdpd\s*[>=]{1,2}\s*(\d+)',q)
-            if any(int(a or b)!=1 for a,b in thresholds):raise PlanError('The certified delinquency rate is 1+ DPD; other thresholds require a separately defined metric.')
+        _cohort_guards(q,metric)
         grouping='none'
-        if re.search(r'\bby\b',q):
-            clause=re.split(r'\bby\b',q,maxsplit=1)[1]
+        grouping_question=re.sub(r'\bby\s+(?:sms|text(?: messages?)?)\b','via SMS',q) if metric=='sms_payment_link_click_share' else q
+        if re.search(r'\bby\b',grouping_question):
+            clause=re.split(r'\bby\b',grouping_question,maxsplit=1)[1]
             found=[]
             for dimension,pattern in [('queue',r'\bqueue\b'),('bucket',r'\bbucket\b'),('province',r'\bprovince\b'),('product',r'\bproduct\b'),('channel',r'\bchannel\b'),('hour',r'\bhour\b'),('site',r'\bsite\b')]:
                 if re.search(pattern,clause):found.append(dimension)
@@ -333,7 +419,7 @@ class InsightEngine:
             if grouping=='site' and metric in ['rpc_rate','ptp_rate','cost_per_contact','cost_per_rpc']:grouping='agent_site'
         if CATALOG.get(metric,{}).get('snapshot_only'):
             exact_snapshot=bool(re.search(r'\bas of\s+'+SNAPSHOT+r'\b|\bon\s+'+SNAPSHOT+r'\b',q))
-            if explicit_period(q) and not exact_snapshot:
+            if explicit_period(q) and not exact_snapshot and (start,end)!=(ASOF,ASOF+timedelta(days=1)):
                 raise PlanError(f'This calculation supports only the {SNAPSHOT} snapshot; historical reconstruction is unavailable.')
             start,end=ASOF,ASOF+timedelta(days=1)
         plan=compile_plan({'metric_id':metric,'grouping':grouping,'start_date':start.isoformat(),'end_date':end.isoformat(),'filters':{},'clarification':None,'refuse':False,'refuse_reason':None})
@@ -342,15 +428,18 @@ class InsightEngine:
         return plan
 
     def _policy(self,q,result):
-        if not re.search(r'collection|hardship|call|contact|promise|payment|consent|bankrupt|consumer proposal|dispute|complaint|grace|metric|financial|dialer|agent|programme|program|policy|procedure|accommodation|accessibility|dncl|casl',q):
+        if not re.search(r'collection|hardship|call|contact|promise|payment|consent|bankrupt|consumer proposal|fraud|dispute|complaint|grace|metric|financial|dialer|agent|programme|program|policy|procedure|accommodation|accessibility|dncl|casl',q):
             reason='This question is outside the collections dataset and policies.'
             result.update(answer=reason,refused=True,reason=reason);return
         preferred=[]
-        if 'casl' in q or 'email' in q and 'consent' in q:preferred=[('POL-COLL-001','§5.3')]
+        if re.search(r'fraud|fraudulent|unauthori[sz]ed.*(?:charge|transaction)',q):preferred=[('PRC-COLL-012','§6.1')]
+        elif re.search(r'complain|dissatisf|complaint',q):preferred=[('POL-COLL-007','§8.1')]
+        elif 'casl' in q or 'email' in q and 'consent' in q:preferred=[('POL-COLL-001','§5.3')]
         elif 'national do not call' in q or 'dncl' in q:preferred=[('POL-COLL-001','§5.3')]
         elif 'consumer proposal' in q or 'bankruptcy' in q:preferred=[('POL-COLL-001','§7.3')]
         elif ('attempt' in q or 'calls' in q) and ('week' in q or '7 day' in q):preferred=[('POL-COLL-001','§5.2')]
-        elif re.search(r'calling hours|call.*(?:before|after)\s*\d|permitted.*hours',q):preferred=[('POL-COLL-001','§5.1')]
+        elif re.search(r'calling hours|call.*(?:before|after)\s*\d|permitted.*hours|hours.*(?:call|contact)|(?:call|contact).*hours|sundays?',q):preferred=[('POL-COLL-001','§5.1')]
+        elif re.search(r'income.*evidence|evidence.*income|proof.*income|income.*proof',q):preferred=[('POL-COLL-004','§4.3'),('POL-COLL-004','§4.2'),('HPT-2026','document')]
         elif 'hours' in q and ('cut' in q or 'reduced' in q) or 'before' in q and 'payment' in q:preferred=[('POL-COLL-004','§4.2')]
         elif '3-month' in q or 'reduced payment' in q:preferred=[('POL-COLL-004','§4.2'),('HPT-2026','document')]
         elif 'grace' in q or 'considered broken' in q:preferred=[('PRC-COLL-010','§3.3')]

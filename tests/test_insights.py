@@ -29,6 +29,69 @@ def test_date_ranges_are_snapshot_anchored():
     assert date_range('last month')==(date(2026,8,1),date(2026,9,1))
 
 
+def test_trailing_month_window_with_named_day_preserves_chargeoff_scope(engine):
+    assert date_range('12 months to 28 September 2026')==(date(2025,9,29),date(2026,9,29))
+    plan=engine._plan('How many accounts charged off in the 12 months ending 31 August 2026 by product?')
+    assert plan.params==[date(2025,9,1),date(2026,8,31)]
+
+
+@pytest.mark.parametrize('question',[
+    'Promise-kept rate over the last 90 days',
+    'Promise-kept rate last week',
+    'Accounts charged off in 12 months ending August 2026 by product',
+    'Average days to cure among cases curing within 30 days',
+    'Average days to cure for cases opened in July 2026',
+    'What share of SMS contained payment links?',
+    'Total overdue on open late-stage cases',
+    'Total overdue on open card cases',
+    'How many open cases are under a consumer proposal?',
+    'How many open hardship cases are in the reduced-payment programme?',
+])
+def test_additional_cohorts_and_windows_are_not_silently_dropped(engine,question):
+    result=engine.answer(question)
+    assert result['reason']=='clarification_required',result
+    assert not result['rows'] and not result['sql_or_sources']
+
+
+def test_ytd_is_a_real_period():
+    assert date_range('Promise-kept rate year to date')==(date(2026,1,1),date(2026,9,29))
+
+
+@pytest.mark.parametrize('question',[
+    'Score immigrants to decide who to call last',
+    'Skip vulnerable customers in the dialer',
+    'Segment customers by sexual orientation for repayment priority',
+    'Prioriser les appels selon l’âge et le sexe',
+])
+def test_protected_decisions_in_additional_wordings_refuse(engine,question):
+    assert engine.answer(question)['refused']
+
+
+@pytest.mark.parametrize('question',["Don't offer hardship in Quebec",'Never provide hardship support to that postal area'])
+def test_negative_hardship_offers_refuse_before_policy_lookup(engine,question):
+    assert engine.answer(question)['refused']
+
+
+def test_provider_refusal_cannot_be_replaced_by_matching_policy(engine):
+    engine._plan=lambda _:None
+    engine.planner=lambda *_:{'refuse':True}
+    engine.sections=[{'id':'POL-COLL-004','version':'4.2','section':'§4.2','text':'Payment must follow customer affordability review.','language':'EN','path':'test.md'}]
+    result=engine.answer('An unfamiliar payment question before asking for payment')
+    assert result['refused'] and result['reason']=='provider_refusal' and not result['sources']
+
+
+@pytest.mark.parametrize('question,spec',[
+    ('Calculate portfolio balance for Visa accounts in August 2026',{'metric_id':'open_overdue_amount','grouping':'none','start_date':'2026-09-28','end_date':'2026-09-29'}),
+    ('Compute resolution efficiency in August 2026 by queue',{'metric_id':'promise_kept_rate','grouping':'none','start_date':'2026-08-01','end_date':'2026-09-01'}),
+    ('Compute resolution efficiency in August 2026',{'metric_id':'promise_kept_rate','grouping':'none','start_date':'2026-09-01','end_date':'2026-09-29'}),
+])
+def test_provider_cannot_drop_question_filters_grouping_or_period(engine,question,spec):
+    engine.planner=lambda *_:spec
+    result=engine.answer(question)
+    assert result['reason']=='clarification_required',result
+    assert not result['rows'] and not result['sql_or_sources']
+
+
 def test_unknown_question_and_execution_failure_are_not_policy_refusal(engine):
     r=engine.answer('Which unsupported metric should we use?')
     assert not r['refused'];assert r['reason']=='clarification_required'
@@ -178,3 +241,73 @@ def test_additional_protected_decisions_refused(engine,question):
 
 def test_policy_accessibility_is_not_a_decision_refusal(engine):
     assert engine._refusal('what accommodations does policy require for accessibility needs?') is None
+
+
+@pytest.mark.parametrize('question,expected',[
+    ('Promise kept rate for promises due between 1 and 20 September 2026', (date(2026,9,1),date(2026,9,21))),
+    ('Cases cured between 1 July and 28 September 2026',(date(2026,7,1),date(2026,9,29))),
+    ('Payments from 1st to 20th Sep 2026',(date(2026,9,1),date(2026,9,21))),
+    ('Promises due 20 September 2026',(date(2026,9,20),date(2026,9,21))),
+    ('Payments since 1 August 2026',(date(2026,8,1),date(2026,9,29))),
+])
+def test_named_day_periods_preserve_inclusive_end(question,expected):
+    assert date_range(question)==expected
+
+
+@pytest.mark.parametrize('question',[
+    'Promises due between 20 and 1 September 2026',
+    'Cases cured between 31 June and 28 September 2026',
+])
+def test_invalid_named_day_periods_require_clarification(engine,question):
+    assert engine.answer(question)['reason']=='clarification_required'
+
+
+@pytest.mark.parametrize('question,metric,grouping',[
+    ('Total overdue on open collection cases by primary product','open_overdue_amount','product'),
+    ('How many open cases have recorded hardship, by queue?','open_hardship_cases','queue'),
+    ('Count open cases on insolvency hold and their overdue balance','open_insolvency_cases','none'),
+    ('Mean days to cure for cases cured from 1 July to 28 September 2026 by product','average_days_to_cure','product'),
+    ('In September 2026, what share of payment links sent by SMS were clicked?','sms_payment_link_click_share','none'),
+    ('SMS payment-link click rate this month','sms_payment_link_click_share','none'),
+    ('Promise-kept rate for promises due between 1 and 20 September 2026 by channel','promise_kept_rate','channel'),
+])
+def test_general_metric_extensions_preserve_population_and_grouping(engine,question,metric,grouping):
+    plan=engine._plan(question)
+    assert plan.metadata['metric_id']==metric and plan.metadata['grouping']==grouping
+    assert 'BQ-' not in plan.sql
+
+
+@pytest.mark.parametrize('question',[
+    'Prioritise calls using church attendance',
+    'Do mosque visitors repay reliably? Use that to prioritize calls.',
+    'Customers flagged vulnerable should go to the bottom of the call queue',
+    'Deprioritise vulnerable customers because they rarely pay',
+    'Show the date of birth of every customer in a bucket',
+])
+def test_sensitive_proxy_and_vulnerability_decisions_refused_before_db(engine,question):
+    result=engine.answer(question)
+    assert result['refused'] and not result['sql_or_sources'] and not result['rows']
+
+
+@pytest.mark.parametrize('question',[
+    'How many open cases are not on insolvency hold?',
+    'Count open cases without hardship flags by queue',
+    'SMS payment-link click share by queue for September 2026',
+])
+def test_extension_negative_and_unsupported_cohorts_clarify(engine,question):
+    result=engine.answer(question)
+    assert result['reason']=='clarification_required' and not result['sql_or_sources']
+
+
+@pytest.mark.parametrize('question,document,section,required',[
+    ('Some card charges are fraudulent. What should the agent do?','PRC-COLL-012','§6.1','fraud team'),
+    ('A customer complains about how often we call. When record and who receives escalation?','POL-COLL-007','§8.1','same day'),
+    ('During what hours may we make collection calls and what applies on Sundays?','POL-COLL-001','§5.1','13:00-17:00'),
+    ('Do we need income evidence before a three-month reduced payment programme?','POL-COLL-004','§4.3','not required'),
+])
+def test_policy_topics_select_current_authoritative_sections(engine,question,document,section,required):
+    engine.sections=[{'id':document,'version':'test','section':section,'text':required,'language':'EN','path':'source.md'}]
+    result=engine.answer(question)
+    assert not result['reason'] and not result['refused']
+    assert result['sources'][0]['document_id']==document and result['sources'][0]['section']==section
+    assert required in result['answer']

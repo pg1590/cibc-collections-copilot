@@ -9,6 +9,9 @@ from app.settings import DB, DATASET
 AGGREGATE_COLUMNS = frozenset('period disputes prior_broken broken_rate_pct promises site agent_site resolved_promises queue current_bucket avg_dpd cases_with_dpd open_cases province_code out_of_hours_pct calls channel cost_per_rpc_cad ptp_rate_pct right_party_contacts payroll_customers delayed_customers payroll_delay_share_pct contact_hour_local rpc_rate_pct attempts product_code product_type primary_product dpd_bucket delinquency_rate_pct delinquent_accounts accounts collected_cad certified_for_vulnerable_flag cure_30d_pct cases cases_open_at_start cure_rate_pct product chargeoff_cad roll_rate_pct attempts_per_case contacted_cases cost_per_contact_cad contacts test_cell kept_pct hardship_rate_pct promise_kept_rate_pct case_count outbound_attempts write_off_rate_pct from_bucket to_bucket'.split())
 
 
+AGGREGATE_COLUMNS = AGGREGATE_COLUMNS | frozenset('ptp_channel overdue_cad open_hardship_cases average_days_to_cure cured_cases cases_with_days_to_cure cases_with_overdue sms_payment_link_clicked_pct payment_link_sms_sent clicked_sms'.split())
+
+
 def _text_allowed():
     return os.getenv('COPILOT_GEMINI_TEXT_EVIDENCE', '0').lower() in ['1', 'true', 'yes']
 
@@ -38,6 +41,8 @@ def engine(db_path=DB, dataset_root=DATASET):
 def _summary_sources(result, instance):
     rows = result.get('rows', [])
     if rows:
+        if result.get('plan', {}).get('metric_id') in ['open_insolvency_cases','open_hardship_cases']:
+            return {}  # Sensitive case flags and their balances stay local.
         if len(rows) > 10 or any(set(row) - AGGREGATE_COLUMNS for row in rows):
             return {}
         return {f'sql-result:{i+1}': '; '.join(f'{key.replace("_", " ")}: {value}' for key, value in row.items())
