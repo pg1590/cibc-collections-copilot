@@ -8,12 +8,12 @@ from app.settings import DATASET,DB,ROOT
 
 
 def validate():
-    questions={r['question_id']:r for r in csv.DictReader((DATASET/'data/benchmark_questions.csv').open())}
+    questions={r['question_id']:r for r in csv.DictReader((DATASET/'data/benchmark_questions.csv').open(encoding='utf-8-sig',newline=''))}
     engine=InsightEngine(DB,DATASET);c=duckdb.connect(str(DB),read_only=True);c.execute('SET threads=2')
     # Gold SQL from organizer is used only in this validation executable.
     c.execute("SET search_path='curated'")
     checks=[]
-    for row in csv.DictReader((DATASET/'labels/benchmark_dev_answers.csv').open()):
+    for row in csv.DictReader((DATASET/'labels/benchmark_dev_answers.csv').open(encoding='utf-8-sig',newline='')):
         result=engine.answer(questions[row['question_id']]['question_text']);sql=row['gold_sql_reference']
         check={'question_id':row['question_id'],'execution_error':result.get('reason')=='execution_error','refused':result['refused']}
         if sql:
@@ -34,7 +34,7 @@ def validate():
             check.update(numeric_reference_match=good,differences=diffs,reference_rows=len(expected))
         else:check['manual_reference']=row['gold_answer'];check['answer']=result['answer'];check['sources']=result['sql_or_sources']
         checks.append(check)
-    c.close();(ROOT/'data/dev-validation.json').write_text(json.dumps(checks,indent=2,default=str))
+    c.close();(ROOT/'data/dev-validation.json').write_text(json.dumps(checks,indent=2,default=str),encoding='utf-8')
     print(json.dumps([{k:v for k,v in x.items() if k not in ['manual_reference','answer','sources']} for x in checks],indent=2))
 
 if __name__=='__main__':validate()

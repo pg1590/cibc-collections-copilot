@@ -1,6 +1,8 @@
 contract_id: DC-C360-001
 version: 1.0.0
-owner: Adda Wale
+owner: Collections Data Office
+owner_status: Proposed owner for this synthetic C360; company approval required
+technical_steward: Adda Wale
 snapshot_date: '2026-09-28'
 refresh: manual reproducible snapshot build
 product: gold.customer_summary
@@ -10,8 +12,11 @@ source_authority:
   schema: schema/schema.json
   conventions: README.md
   base_contact_contract: DC-COLL-001 v1.0
+  base_contact_contract_file: files/docs/data_contracts/DC-COLL-001_v1.0_EN.md
+  base_contact_owner: Collections Data Office (synthetic source contract)
+  base_contact_refresh: daily at 05:00 ET in the source contract; this build uses a manual snapshot
 columns:
-  customer_id: {type: string, nullable: false, unique: true, description: Verified canonical CRM reference}
+  customer_id: {type: string, nullable: false, unique: true, description: Canonical CRM reference accepted by the documented identity rules}
   name: {type: string, nullable: true, description: Canonical CRM first and last name}
   province: {type: string, nullable: true, source: customers.province_code}
   preferred_language: {type: string, nullable: true, source: customers.preferred_language}
@@ -34,11 +39,33 @@ quality:
   raw_rows: immutable release files exposed as raw views
   curated_rows: typed rows; unparseable nonempty values become null and are counted
   source_keys: checked for uniqueness and nulls
-  contact_case_foreign_key: measured orphan count; original source tolerance below 1 percent
+  contact_case_foreign_key: orphan count measured; original source tolerance below 1 percent; no links invented
   validation: eager Pandera on every feature-store customer key, case count and overdue value
   report: docs/data-quality-report.md
+  inherited_contact_targets:
+    contact_id_unique_non_null:
+      target: zero missing or duplicate contact_id values
+      implementation: measured by contact_id_unique_non_null in the quality report
+    contact_ts_utc_non_null:
+      target: zero missing contact_ts_utc values
+      implementation: measured by contact_ts_utc_missing in the quality report
+    contact_case_foreign_key:
+      target: fewer than 1 percent of contact rows have an orphan case_id
+      maximum_orphan_fraction_exclusive: 0.01
+      implementation: measured by case_id_referential_integrity; orphan rows retained and flagged
+    published_channel_codes:
+      target: contact channel belongs to the published source code list
+      implementation: source target recorded here; membership is not currently measured by the counted report
 allowed_uses: [collections operations, aggregate analytics, review assistance]
 disallowed_uses: [marketing, bulk PII export, protected-attribute decisions, automatic customer contact]
+third_party_processing:
+  provider: optional Gemini; configured by the operator
+  default_evidence: allowed aggregate result columns, current policy paragraphs, and redacted brief facts and rule explanations
+  planning: submitted question and supported metric catalog; never unrestricted source tables
+  note_and_transcript_text: local by default; selected text permitted only with COPILOT_GEMINI_TEXT_EVIDENCE=1
+  response_validation: approved source IDs and complete evidence units must match; numeric answers and recommendations remain local
+  full_dataset_upload: not implemented or required
+  request_storage: store=false; provider terms and Free-tier billing settings remain the operator's responsibility
 access:
   agent: assigned cases only
   analyst: portfolio analytics and C360

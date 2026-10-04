@@ -45,10 +45,49 @@ function BriefView({ brief }: { brief: Brief }) {
           <CardTitle className="text-lg">Summary</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
+          {brief.generation && (
+            <p className="text-muted-foreground text-sm">
+              {brief.generation.status === "generated" && brief.generation.provider.toLowerCase() === "gemini"
+                ? "Gemini-assisted draft based on the recorded facts and policy evidence."
+                : brief.generation.status === "fallback"
+                  ? "AI assistance was unavailable. This draft uses the recorded facts and local rules."
+                  : "Draft prepared from the recorded facts and local rules."}
+            </p>
+          )}
           <p className="leading-relaxed whitespace-pre-line">{brief.summary}</p>
+          {brief.summary_evidence && (
+            <section aria-label="Supporting evidence" className="bg-muted/40 rounded-lg border p-4">
+              <h3 className="text-muted-foreground mb-2 text-sm font-medium">Supporting evidence</h3>
+              <p className="text-sm leading-relaxed whitespace-pre-line">{brief.summary_evidence}</p>
+            </section>
+          )}
+          {brief.hardship_status && (
+            <div className="rounded-lg border p-4">
+              <h3 className="mb-1 text-sm font-semibold">Hardship evidence</h3>
+              <p className="text-sm leading-relaxed">
+                {brief.hardship_status === "recorded"
+                  ? "Financial hardship is recorded in the case history. Confirm the customer’s current circumstances during review."
+                  : brief.hardship_status === "possible"
+                    ? "The available evidence suggests possible financial hardship. A reviewer must confirm it."
+                    : "The available evidence does not establish financial hardship. This does not mean hardship is absent."}
+              </p>
+              {!!brief.recorded_hardship_cases?.length && (
+                <div className="mt-3">
+                  <p className="text-muted-foreground mb-1 text-xs">Recorded case references</p>
+                  <SourceList sources={brief.recorded_hardship_cases} />
+                </div>
+              )}
+            </div>
+          )}
           <div className="bg-accent/50 rounded-lg border border-primary/15 p-4">
             <h3 className="text-accent-foreground mb-1 text-sm font-semibold">Recommended next step</h3>
             <p className="leading-relaxed whitespace-pre-line">{brief.recommendation}</p>
+            {brief.recommendation_reason && (
+              <div className="mt-3 border-t border-primary/15 pt-3">
+                <h3 className="text-accent-foreground mb-1 text-sm font-semibold">Why this recommendation</h3>
+                <p className="text-sm leading-relaxed whitespace-pre-line">{brief.recommendation_reason}</p>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

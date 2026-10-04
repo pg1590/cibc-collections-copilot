@@ -1,4 +1,4 @@
-"""HTTP integration check on the real synthetic release; no external calls."""
+"""HTTP integration check on the synthetic release; honors server provider settings."""
 import json,sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))

@@ -1,3 +1,10 @@
+Organizer update at about16:54 IST: owner confirmed `cibchack26` invitation appears in repository access. Record invitation sent; acceptance not independently checked.
+
+## Current correctness release - 4 October 2026, about 16:50 IST
+User approved priority gap fixes followed by preferred optional Free-tier Gemini integration, and explicitly authorized relevant private repository source code transfer to Anthropic excluding keys/raw datasets. Actual Opus 5.5 high-effort improvement/runtime/core reviews and policy/transcript extraction implementation succeeded with verified model metadata. Larger query-engine attempt was stopped without patch. Root owns integrated engine/compiler/runtime/API; all delegated source ownership is complete.
+
+Current checks: 131 tests, 12/12 numeric public references, 35 generated benchmark rows with six refusals/zero unresolved, 47 compiler groupings EXPLAIN, frontend production build and local HTTP smoke passed. See docs/reviews/correctness-gemini-release.md. Model/features/C360 schema unchanged; no retraining. Optional Gemini key file remains absent, so live provider/schema compatibility unverified. New summaries preserve complete verified units; no model SQL, no automatic eligibility/contact. Note/transcript transfer disabled by default. Final PDF/architecture refreshed; code commit/push and ZIP refresh follow validation. Organizer invitation still needs owner confirmation by17:00; a reminder was sent. Extra15 questions due19:00 and final deadline21:00. No form submission/deployment/video link invented. Latest status supersedes older historical notes below.
+
 # CIBC Collections Hackathon
 
 ## Submission preparation — 4 October 2026 (overrides historical entries below)

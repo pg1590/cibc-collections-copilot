@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorMessage } from "@/lib/api";
 import type { AskResponse } from "@/lib/types";
-import { formatCount } from "@/lib/utils";
+import { displayValue, formatCount } from "@/lib/utils";
 
 interface Exchange {
   question: string;
@@ -24,6 +24,14 @@ interface Exchange {
 }
 
 function AnswerCard({ question, result }: Exchange) {
+  const calculationDetails = result.plan
+    ? [
+        { label: "Measure", value: result.plan.metric_id },
+        { label: "Grouped by", value: result.plan.grouping },
+        { label: "Start date", value: result.plan.start_date },
+        { label: "Before", value: result.plan.end_date },
+      ].filter(({ value }) => value !== undefined && value !== null && value !== "")
+    : [];
   return (
     <Card>
       <CardHeader>
@@ -31,6 +39,15 @@ function AnswerCard({ question, result }: Exchange) {
         <CardTitle className="text-[1.05rem] leading-snug font-medium">{question}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
+        {result.generation && (
+          <p className="text-muted-foreground text-sm">
+            {result.generation.status === "generated" && result.generation.provider.toLowerCase() === "gemini"
+              ? "Gemini-assisted answer based on recorded data and cited evidence."
+              : result.generation.status === "fallback"
+                ? "AI assistance was unavailable. This answer uses the recorded data and local sources."
+                : "Answer prepared from the recorded data and local sources."}
+          </p>
+        )}
         {result.refused ? (
           <Alert variant="review">
             <OctagonX aria-hidden />
@@ -44,11 +61,32 @@ function AnswerCard({ question, result }: Exchange) {
           <p className="text-[1.05rem] leading-relaxed whitespace-pre-line">{result.answer}</p>
         )}
 
+        {!result.refused && result.explanation && (
+          <section aria-label="Evidence explanation" className="bg-muted/40 rounded-lg border p-4">
+            <h3 className="mb-2 text-sm font-medium">Evidence explanation</h3>
+            <p className="text-sm leading-relaxed whitespace-pre-line">{result.explanation}</p>
+          </section>
+        )}
+
         <div className="text-muted-foreground flex flex-wrap gap-2 text-xs">
           <Badge variant="outline">Snapshot {result.snapshot_date}</Badge>
           <Badge variant="outline">{formatCount(result.execution_ms)} ms</Badge>
           {!result.refused && <Badge variant="outline">{formatCount(result.rows?.length ?? 0)} result rows</Badge>}
         </div>
+
+        {!!calculationDetails.length && (
+          <section aria-label="Calculation details" className="bg-muted/40 rounded-lg border p-3">
+            <h3 className="mb-2 text-sm font-medium">Calculation details</h3>
+            <dl className="flex flex-wrap gap-x-6 gap-y-3 text-sm">
+              {calculationDetails.map(({ label, value }) => (
+                <div key={label}>
+                  <dt className="text-muted-foreground text-xs">{label}</dt>
+                  <dd className="break-words">{typeof value === "string" ? value.replaceAll("_", " ") : displayValue(value)}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )}
 
         {result.sql_or_sources && (
           <Collapsible>
@@ -62,9 +100,15 @@ function AnswerCard({ question, result }: Exchange) {
               <pre className="bg-sidebar text-sidebar-foreground overflow-x-auto rounded-lg p-4 font-mono text-xs leading-relaxed">
                 <code>{result.sql_or_sources}</code>
               </pre>
-              {result.sources?.length > 0 && <SourceList sources={result.sources} />}
             </CollapsibleContent>
           </Collapsible>
+        )}
+
+        {result.sources?.length > 0 && (
+          <section aria-label="Answer sources" className="space-y-2">
+            <h3 className="text-sm font-medium">Sources</h3>
+            <SourceList sources={result.sources} />
+          </section>
         )}
 
         {!result.refused && result.rows?.length > 0 && (
@@ -131,7 +175,7 @@ export default function AskPage() {
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p id="question-help" className="text-muted-foreground text-xs">
-              Press Ctrl + Enter to send. Answers use fixed, reviewed query templates; your text is never run as SQL.
+              Press Ctrl + Enter to send. Calculations use reviewed definitions, and each answer shows its evidence.
             </p>
             <Button type="submit" disabled={pending || !question.trim()}>
               {pending ? <Loader2 className="animate-spin" aria-hidden /> : <Send aria-hidden />}

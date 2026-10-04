@@ -6,13 +6,13 @@ Organizer update received on 4 October 2026. All times below are IST. The deadli
 
 | Time | Action | Current status |
 |---|---|---|
-| Before 17:00 | Invite GitHub user `cibchack26` to the private repo | Requires owner action. The connector cannot access this repo, no browser is connected, and no GitHub API token is configured. Invitation/access is unverified. |
+| Before 17:00 | Invite GitHub user `cibchack26` to the private repo | Owner confirmed the invitation appears in repository access before the deadline. Acceptance has not been independently checked. |
 | 19:00 | Obtain the 15 extra benchmark questions | Awaiting organizer release |
 | Before 21:00 | Commit/push the complete benchmark and code, refresh the ZIP and submit once | Pending final questions, video and owner checks; deck prepared, refresh after final run |
 
 Repository: <https://github.com/pg1590/cibc-collections-copilot>.
 
-Owner access settings: <https://github.com/pg1590/cibc-collections-copilot/settings/access>. Choose Add people, search `cibchack26`, and send the collaborator invitation. Verify the invitation appears, or that the account already has access. Keep the repository private. Invitation acceptance remains a separate action by the invitee.
+Owner access settings: <https://github.com/pg1590/cibc-collections-copilot/settings/access>. The owner confirmed the invitation was sent. Keep the repository private and verify acceptance when the organizer accepts. Invitation acceptance remains a separate action by the invitee.
 
 ## Required files in GitHub
 

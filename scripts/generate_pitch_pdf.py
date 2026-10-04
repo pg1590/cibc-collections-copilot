@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import sys
+import xml.etree.ElementTree as ET
 from html import escape
 from pathlib import Path
 
@@ -29,22 +30,28 @@ W, H = 960, 540
 
 
 def generate(output):
-    quality = json.loads(QUALITY.read_text())
-    model = json.loads(MODEL_REPORT.read_text())
-    parity = json.loads((ROOT / 'data/features-report.json').read_text())['parity']
-    with (ROOT / 'submission/benchmark_answers.csv').open(newline='') as stream:
+    quality = json.loads(QUALITY.read_text(encoding='utf-8'))
+    model = json.loads(MODEL_REPORT.read_text(encoding='utf-8'))
+    parity = json.loads((ROOT / 'data/features-report.json').read_text(encoding='utf-8'))['parity']
+    with (ROOT / 'submission/benchmark_answers.csv').open(newline='',encoding='utf-8-sig') as stream:
         benchmark = list(csv.DictReader(stream))
-    with (DATASET / 'data/benchmark_questions.csv').open(newline='') as stream:
+    with (DATASET / 'data/benchmark_questions.csv').open(newline='',encoding='utf-8-sig') as stream:
         released = list(csv.DictReader(stream))
     validation_path = ROOT / 'data/dev-validation.json'
     if not validation_path.exists():
         raise ValueError('Run scripts/validate_dev.py before generating the pitch.')
-    validation = json.loads(validation_path.read_text())
+    validation = json.loads(validation_path.read_text(encoding='utf-8'))
     numeric = [row for row in validation if 'numeric_reference_match' in row]
     matched = sum(row['numeric_reference_match'] for row in numeric)
     if matched != len(numeric) or any(row.get('execution_error') for row in validation):
         raise ValueError('Development validation has failures. Do not export passing claims.')
-    status = json.loads((ROOT / 'data/benchmark-status.json').read_text())
+    status = json.loads((ROOT / 'data/benchmark-status.json').read_text(encoding='utf-8'))
+    test_report=ROOT/'data/test-results.xml'
+    if not test_report.exists():raise ValueError('Run pytest with --junitxml=data/test-results.xml before generating the pitch.')
+    suites=ET.parse(test_report).getroot().findall('testsuite')
+    totals={key:sum(int(s.get(key,0)) for s in suites) for key in ['tests','failures','errors','skipped']}
+    if not suites or totals['failures'] or totals['errors']:raise ValueError('Tests have failures or missing results; do not export passing claims.')
+    passed=totals['tests']-totals['skipped']
     if status.get('unresolved') or status.get('questions') != len(benchmark):
         raise ValueError('Benchmark output/status is unresolved or stale.')
     checks = {(row['table'], row['check']): row['failed_rows'] for row in quality['checks']}
@@ -117,9 +124,9 @@ def generate(output):
     page(3, 'Four connected layers', 'Batch preparation supplies the local API and review workflow.')
     nodes = [
         (52, 282, '1  Data Product Factory', 'Normalize sources and match IDs<br/>DuckDB raw, curated and C360'),
-        (528, 282, '2  Insight and NLP', 'Reviewed SQL and policy retrieval<br/>Answers include SQL or sources'),
+        (528, 282, '2  Insight and NLP', 'Validated plans; optional Gemini<br/>Local SQL and cited policy answers'),
         (52, 111, '3  Feature Store', 'Case, payment and financial text cues<br/>Shared versioned definitions'),
-        (528, 111, '4  Models and Decisioning', 'Local classifier and cited draft<br/>Supervisor decision and SQLite audit'),
+        (528, 111, '4  Models and Decisioning', 'Classifier + explicit hardship rules<br/>Supervisor decision and SQLite audit'),
     ]
     for x, y, label, body in nodes:
         c.setStrokeColor(HexColor(TEAL)); c.setLineWidth(1.6)
@@ -157,7 +164,7 @@ def generate(output):
 
     # 5. Concrete outputs, grounded in verified development examples.
     page(5, 'Answers with inspectable evidence',
-         'The local planner uses source queries and current document sections. No runtime LLM API is connected.',
+         'Local SQL calculates results; optional Gemini selects validated plans and exact source evidence.',
          'Sources: public development references and PRC-COLL-010 v2.1 section 3.3')
     text(52, 355, 410, 'Promise-kept rate<br/>August 2026', 24, bold=True, maximum=75)
     text(52, 258, 410, '35.1%', 54, TEAL, True)
@@ -193,7 +200,7 @@ def generate(output):
     page(7, 'Human review and access controls',
          'The system prepares assistance. A supervisor records the decision and reason.')
     item(52, 359, 410, 'Pending brief',
-         'Customer facts, financial evidence, model details, policy references and a proposed message.')
+         'Customer facts, recorded hardship, possible cues, a rule reason and a proposed message.')
     item(52, 218, 410, 'Supervisor decision',
          'Approve, reject or edit with a reason. The draft and decision persist, and the audit records the change.')
     text(552, 359, 356, '<b>Agent</b><br/>Assigned customers and own briefs<br/><br/><b>Analyst</b><br/>Portfolio questions and data checks<br/><br/><b>Supervisor</b><br/>Review decisions and audit access', 18, maximum=280)
@@ -207,7 +214,7 @@ def generate(output):
     rows = [
         ('Numeric development references', f'{matched}/{len(numeric)} match within tolerance'),
         ('Generated benchmark rows', f'{len(benchmark)} rows, {sum(r["refused"] == "true" for r in benchmark)} refusals'),
-        ('Role, audit and financial feature tests', '19 automated tests passed'),
+        ('Core, role, provider and evidence tests', f"{passed} automated tests passed"),
         ('Offline / live feature definitions', f'{parity["checked"]} customers, {parity["mismatches"]} mismatches'),
         ('Frontend checks', 'Typecheck, lint and build passed'),
     ]
@@ -217,7 +224,7 @@ def generate(output):
         text(530, top, 378, escape(value), 18, TEAL, maximum=45)
     extra = len(benchmark) - len(released)
     extra_text = f'{extra} extra question rows included.' if extra else 'The 15 extra questions are pending the 19:00 release.'
-    text(52, 96, 856, escape(extra_text) + '<br/>Gaps: metric groupings, programme checks and concurrent-user testing.',
+    text(52, 96, 856, escape(extra_text) + '<br/>Limits: live provider check, programme eligibility and multi-user capacity.',
          17, RED, maximum=58)
     c.showPage()
 
@@ -225,7 +232,7 @@ def generate(output):
     page(9, 'Company pilot and next implementation steps',
          'A real deployment requires approved accuracy targets and representative customer-data validation.')
     item(52, 357, 410, 'Accuracy and relevant support',
-         'Correct grouping and cohort gaps. Improve hardship recall and check programme eligibility against policy.', 19)
+         'Validate unseen questions, improve hardship recall and check programme eligibility against policy.', 19)
     item(52, 205, 410, 'Operational measures',
          'Track factual errors, missed hardship, supervisor corrections and time per case.', 19)
     item(538, 357, 370, 'Shared serving and fresh data',
@@ -233,7 +240,7 @@ def generate(output):
     item(538, 205, 370, 'Controlled rollout',
          'Integrate company login and monitor data quality, feature versions and model drift.', 19)
     text(52, 84, 856,
-         '<b>Development tools:</b> Codex for implementation and verification. Claude Opus 5.5 for architecture reviews and frontend engineering. Runtime uses a local model and reviewed queries.',
+         '<b>Development:</b> Codex implementation/verification; Claude Opus 5.5 reviews, frontend and extractive summaries. <b>Runtime:</b> local classifier/SQL; optional Gemini, live verification pending.',
          14, MUTED, maximum=42)
     c.showPage(); c.save()
     reader = PdfReader(output)

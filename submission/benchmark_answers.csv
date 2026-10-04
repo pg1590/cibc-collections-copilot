@@ -11,14 +11,15 @@ BQ-003,"prior_broken,broken_rate_pct,promises
 1,50.7,29340
 2,59.8,6486
 3,69.3,1497
-prior_broken=3 means three or more; open/cancelled promises are excluded.","SELECT least(prior_broken_ptp_count,3) prior_broken,round(100.0*avg(CASE WHEN ptp_status='broken' THEN 1 ELSE 0 END),1) broken_rate_pct,count(*) promises FROM curated.promises_to_pay WHERE ptp_status IN ('kept','partially_kept','broken') GROUP BY 1 ORDER BY 1
+prior_broken=3 means three or more; open/cancelled promises excluded. Uses all resolved promises in the extract; no period was supplied.","SELECT least(prior_broken_ptp_count,3) prior_broken,round(100.0*avg(CASE WHEN ptp_status='broken' THEN 1 ELSE 0 END),1) broken_rate_pct,count(*) promises FROM curated.promises_to_pay WHERE ptp_status IN ('kept','partially_kept','broken') GROUP BY 1 ORDER BY 1
 Bound parameters: []",false
-BQ-004,"queue,avg_dpd,open_cases
+BQ-004,"queue,avg_dpd,cases_with_dpd
 early_stage,14.5,30922
 hardship_specialist,71.9,12244
 late_stage,126.2,11017
 mid_stage,56.1,32241
-special_handling,90.1,9576","SELECT queue,round(avg(current_dpd),1) avg_dpd,count(*) open_cases FROM curated.collections_cases WHERE outcome IS NULL GROUP BY 1 ORDER BY 1
+special_handling,90.1,9576
+Current source-wide cases at 2026-09-28; missing current DPD is excluded.","SELECT coalesce(c.queue,'unknown') AS queue, round(avg(c.current_dpd),1) avg_dpd, count(*) cases_with_dpd FROM curated.collections_cases c WHERE c.outcome IS NULL AND c.current_dpd IS NOT NULL GROUP BY 1 ORDER BY 1
 Bound parameters: []",false
 BQ-005,"## §5.3 Consent and the National Do Not Call List
 Servicing and collection contact relies on account-servicing consent (`consent_call`, `consent_sms`,
@@ -29,18 +30,20 @@ BQ-006,"period,disputes
 7-14 Sep,566
 Counts use recorded dispute flags; the source does not supply a separate late-fee-only dispute category. Incident IR-2026-0914 describes the posting-delay context.","SELECT CASE WHEN contact_ts_local>=? THEN ? ELSE ? END period,count(*) disputes FROM curated.contact_history WHERE dispute_raised_flag AND contact_ts_local>=? AND contact_ts_local<? GROUP BY 1 ORDER BY 1
 Bound parameters: [""2026-09-15"", ""15-22 Sep"", ""7-14 Sep"", ""2026-09-07"", ""2026-09-23""]",false
-BQ-007,"site,broken_rate_pct,promises
+BQ-007,"site,broken_rate_pct,resolved_promises
 Calgary,61.4,7123
 Halifax,58.7,5902
 Montréal,59.7,15998
 Toronto,59.8,13120
 Windsor,59.2,7087
 self_serve,53.5,8426
-vendor,58.9,4261","SELECT coalesce(a.site,'self_serve') site,round(100.0*avg(CASE WHEN p.ptp_status='broken' THEN 1 ELSE 0 END),1) broken_rate_pct,count(*) promises FROM curated.promises_to_pay p LEFT JOIN curated.agents a USING(agent_id) WHERE p.ptp_due_date>=? AND p.ptp_due_date<? AND p.ptp_status IN ('kept','partially_kept','broken') GROUP BY 1 ORDER BY 1
+vendor,58.9,4261
+Dates use an inclusive start and exclusive end. Source-wide curated records are used. Open/cancelled promises are excluded; unknown groups retain unlinked source records. Queue/site reflect the extract's reference values.","SELECT CASE WHEN p.agent_id IS NULL THEN 'self_serve' ELSE coalesce(a.site,'unknown') END AS site, round(100.0*sum(CASE WHEN p.ptp_status='broken' THEN 1 ELSE 0 END)/nullif(count(*),0),1) broken_rate_pct, count(*) resolved_promises FROM curated.promises_to_pay p LEFT JOIN curated.agents a USING(agent_id) WHERE p.ptp_due_date>=? AND p.ptp_due_date<? AND p.ptp_status IN ('kept','partially_kept','broken') GROUP BY 1 ORDER BY 1
 Bound parameters: [""2026-07-01"", ""2026-09-29""]",false
 BQ-008,"cure_30d_pct,cases
-29.46,26120","SELECT round(100.0*avg(CASE WHEN cure_flag AND days_to_cure<=30 THEN 1 ELSE 0 END),2) cure_30d_pct,count(*) cases FROM curated.collections_cases WHERE case_open_date>=? AND case_open_date<? AND NOT coalesce(insolvency_hold_flag,false) AND NOT coalesce(deceased_hold_flag,false)
-Bound parameters: [""2026-07-01"", ""2026-08-01""]",false
+29.46,26120
+Cures within 30 days of opening; only cases with 30 observed days by the snapshot. Current insolvency/deceased holds excluded.","SELECT round(100.0*avg(CASE WHEN cure_flag AND days_to_cure<=30 THEN 1 ELSE 0 END),2) cure_30d_pct,count(*) cases FROM curated.collections_cases WHERE case_open_date>=? AND case_open_date<? AND case_open_date<=? AND NOT coalesce(insolvency_hold_flag,false) AND NOT coalesce(deceased_hold_flag,false)
+Bound parameters: [""2026-07-01"", ""2026-08-01"", ""2026-08-29""]",false
 BQ-009,"## §7.3 Insolvency (stay of proceedings)
 When a customer files for bankruptcy or a consumer proposal, a stay of proceedings applies: **all collection
 contact stops** from the filing date and the case moves to `insolvency_hold`.",POL-COLL-001 v3.0 §7.3 (files/docs/policy/POL-COLL-001_v3.0_EN.md),false
@@ -75,26 +78,28 @@ BQ-011,"contact_hour_local,rpc_rate_pct,attempts
 19,59.2,16079
 20,53.0,8820
 21,38.9,18
-22,34.6,26","SELECT h.contact_hour_local,round(100.0*avg(CASE WHEN h.rpc_flag THEN 1 ELSE 0 END),1) rpc_rate_pct,count(*) attempts FROM curated.contact_history h WHERE coalesce(h.channel_v2,h.channel)='call' AND h.direction='outbound' AND h.contact_ts_local>=? AND h.contact_ts_local<? GROUP BY 1 ORDER BY 1
+22,34.6,26
+Dates use an inclusive start and exclusive end. Source-wide curated records are used. Contact periods use recorded local timestamps; channel_v2 takes precedence over legacy channel.","SELECT h.contact_hour_local AS contact_hour_local, round(100.0*sum(CASE WHEN h.rpc_flag THEN 1 ELSE 0 END)/nullif(count(*),0),1) rpc_rate_pct, count(*) attempts FROM curated.contact_history h WHERE coalesce(h.channel_v2,h.channel)!='system' AND h.contact_ts_local>=? AND h.contact_ts_local<? AND coalesce(h.channel_v2,h.channel)='call' AND h.direction='outbound' GROUP BY 1 ORDER BY 1
 Bound parameters: [""2026-09-01"", ""2026-09-29""]",false
-BQ-012,"product_code,delinquency_rate_pct,accounts
-CBV-CLASSIC,8.65,123186
-LRV-CLASSIC,8.6,49108
-NFM-STD,8.73,102807
-SCV-SECURED,9.25,38310
-STM-STUDENT,10.09,36200
-TRV-INFINITE,7.17,90161
-WEM-ELITE,6.58,48031
-Accounts with missing DPD are excluded and counted in the data-quality checks.","SELECT product_code,round(100.0*avg(CASE WHEN dpd>=1 THEN 1 ELSE 0 END),2) delinquency_rate_pct,count(*) accounts FROM curated.card_accounts WHERE snapshot_date=? AND account_status IN ('active','blocked') AND dpd IS NOT NULL GROUP BY 1 ORDER BY 1
+BQ-012,"product_code,delinquency_rate_pct,accounts,delinquent_accounts
+CBV-CLASSIC,8.65,123186,10653
+LRV-CLASSIC,8.6,49108,4221
+NFM-STD,8.73,102807,8971
+SCV-SECURED,9.25,38310,3545
+STM-STUDENT,10.09,36200,3654
+TRV-INFINITE,7.17,90161,6466
+WEM-ELITE,6.58,48031,3160
+Card snapshot at 2026-09-28; active and blocked cards with known DPD only. Missing DPD is excluded and counted in data-quality reporting. Reported source bucket labels are retained; DPD/bucket discrepancies are reported separately. Rates are within each group, not contributions to an overall rate.","SELECT a.product_code AS product_code, round(100.0*sum(CASE WHEN a.dpd>=1 THEN 1 ELSE 0 END)/nullif(count(*),0),2) delinquency_rate_pct, count(*) accounts, sum(CASE WHEN a.dpd>=1 THEN 1 ELSE 0 END) delinquent_accounts FROM curated.card_accounts a WHERE a.snapshot_date=? AND a.account_status IN ('active','blocked') AND a.dpd IS NOT NULL GROUP BY 1 ORDER BY 1
 Bound parameters: [""2026-09-28""]",false
 BQ-013,"collected_cad
-2526900.4","SELECT round(sum(amount_paid_against),2) collected_cad FROM curated.promises_to_pay WHERE paid_date>=? AND paid_date<?
+2526900.4
+Payment amounts recorded against promises only; this does not include all collection-account payments.","SELECT round(sum(amount_paid_against),2) collected_cad FROM curated.promises_to_pay WHERE paid_date>=? AND paid_date<?
 Bound parameters: [""2026-09-01"", ""2026-09-29""]",false
 BQ-014,"certified_for_vulnerable_flag,cure_30d_pct,cases
-False,0.0,2226
-True,0.0,1964
-Restricted evaluation of agent certification in the randomized pilot; this is not a customer ranking or an eligibility rule.","WITH first_assignment AS(SELECT case_id,certified_for_vulnerable_flag,assigned_ts FROM curated.case_assignment_history WHERE assignment_method='randomised_pilot' AND hardship_flag_at_assignment QUALIFY row_number() OVER(PARTITION BY case_id ORDER BY assigned_ts,assignment_id)=1)
-SELECT a.certified_for_vulnerable_flag,round(100.0*avg(CASE WHEN c.cure_flag AND c.days_to_cure<=30 THEN 1 ELSE 0 END),2) cure_30d_pct,count(*) cases FROM first_assignment a JOIN curated.collections_cases c USING(case_id) WHERE c.case_open_date<=? GROUP BY 1 ORDER BY 1
+False,2.45,1349
+True,3.98,1182
+Observed 30-day cures measured from first randomized pilot assignment, when the certification treatment starts; only assignments with 30 observed days are included. Hardship is recorded at the first assignment. Current insolvency/deceased holds are excluded in line with the cure definition; historical hold status is unavailable. This descriptive comparison does not establish causality or customer eligibility.","WITH first_assignment AS(SELECT case_id,certified_for_vulnerable_flag,assigned_ts,hardship_flag_at_assignment FROM curated.case_assignment_history WHERE assignment_method='randomised_pilot' QUALIFY row_number() OVER(PARTITION BY case_id ORDER BY assigned_ts,assignment_id)=1)
+SELECT a.certified_for_vulnerable_flag,round(100.0*avg(CASE WHEN c.cure_flag AND c.cure_date>=cast(a.assigned_ts AS DATE) AND c.cure_date<=cast(a.assigned_ts AS DATE)+30 THEN 1 ELSE 0 END),2) cure_30d_pct,count(*) cases FROM first_assignment a JOIN curated.collections_cases c USING(case_id) WHERE a.hardship_flag_at_assignment AND cast(a.assigned_ts AS DATE)<=? AND NOT coalesce(c.insolvency_hold_flag,false) AND NOT coalesce(c.deceased_hold_flag,false) GROUP BY 1 ORDER BY 1
 Bound parameters: [""2026-08-29""]",false
 BQ-015,"product,accounts,chargeoff_cad
 auto_loan,137,3718099.2
@@ -102,23 +107,28 @@ card,360,2007836.32
 mortgage,4,1235398.37
 personal_loan,236,3207027.83
 student_loc,2,25929.27
-unsecured_loc,102,947148.47","WITH accounts AS(SELECT 'card' product,chargeoff_date,chargeoff_amount FROM curated.card_accounts UNION ALL SELECT product_type,chargeoff_date,chargeoff_amount FROM curated.loan_accounts)
+unsecured_loc,102,947148.47
+Charge-off counts and amounts by product from 2025-09-29 through 2026-09-28; this is not the write-off rate.","WITH accounts AS(SELECT 'card' product,chargeoff_date,chargeoff_amount FROM curated.card_accounts UNION ALL SELECT product_type,chargeoff_date,chargeoff_amount FROM curated.loan_accounts)
 SELECT product,count(*) accounts,round(sum(chargeoff_amount),2) chargeoff_cad FROM accounts WHERE chargeoff_date>=? AND chargeoff_date<=? GROUP BY 1 ORDER BY 1
 Bound parameters: [""2025-09-29"", ""2026-09-28""]",false
 BQ-016,"Most recent recorded call on CS-2026-614370: 2026-09-27 16:59:55, transcript 5010384, language en-CA.
-[13.5s customer] Speaking.
-[20.21s customer] Sure, it's [PII].
-[70.86s customer] Sure.
-[79.91s customer] I'm not able to pay that right now. I've been off work sick since Jul.
-[87.09s customer] I've been dealing with a lot of anxiety.
-[101.94s customer] Yes, that would help.
-[113.16s customer] Mostly rent, groceries and the car.
-[122.76s customer] I can pay $95 Oct 14.
-[136.95s customer] No, I think that's it.
-[15.24s agent confirmation] Before we continue, can you please confirm your date of birth?
-[91.13s agent confirmation] I'm sorry to hear that. We have hardship options, like a reduced payment for three months. Would you like me to review that with you?
-[125.86s agent confirmation] Just to confirm, a payment of $95.00 on October 14. I'll send you a payment link.
-[140.22s agent confirmation] Thank you for your time today. You'll receive a confirmation by text. Have a good evening.","SELECT transcript_id,call_start_ts,file_path,language FROM curated.call_transcripts WHERE case_id=? ORDER BY call_start_ts DESC,transcript_id DESC LIMIT 1
+Customer circumstances (exact words; cues do not establish hardship):
+- [79.91s customer] I'm not able to pay that right now. I've been off work sick since Jul.
+- [113.16s customer] Mostly rent, groceries and the car.
+Payment commitments (exact customer words):
+- [122.76s customer] I can pay $95 Oct 14.
+Other customer statements (exact):
+- [13.5s customer] Speaking.
+- [20.21s customer] Sure, it's [PII].
+- [70.86s customer] Sure.
+- [87.09s customer] I've been dealing with a lot of anxiety.
+- [101.94s customer] Yes, that would help.
+- [136.95s customer] No, I think that's it.
+Agent confirmations (exact):
+- [15.24s agent] Before we continue, can you please confirm your date of birth?
+- [116.75s agent] Okay, I've noted that. The hardship team will follow up with the details.
+- [125.86s agent] Just to confirm, a payment of $95.00 on October 14. I'll send you a payment link.
+- [140.22s agent] Thank you for your time today. You'll receive a confirmation by text. Have a good evening.","SELECT transcript_id,call_start_ts,file_path,language FROM curated.call_transcripts WHERE case_id=? ORDER BY call_start_ts DESC,transcript_id DESC LIMIT 1
 Bound parameters: [""CS-2026-614370""]
 transcript:5010384 (transcripts/2026/09/5010384.json); exact turn timestamps above",false
 BQ-017,"product_type,roll_rate_pct,accounts
@@ -129,7 +139,7 @@ mortgage,3.6,193
 personal_loan,4.9,733
 student_loc,25.0,8
 unsecured_loc,5.9,290
-DPD values define buckets; missing DPD is excluded at both endpoints.","WITH s AS(SELECT account_id,product_type,coalesce(try_cast(month_end_date AS DATE),cast(try_strptime(month_end_date,['%Y-%m-%d','%d/%m/%Y','%Y%m%d']) AS DATE)) me,dpd FROM curated.account_monthly_snapshot WHERE dpd IS NOT NULL)
+Matched-account cohort with known DPD at both requested month ends; missing endpoints are excluded. DPD defines buckets. This public-reference cohort does not reconstruct historical insolvency holds.","WITH s AS(SELECT account_id,product_type,coalesce(try_cast(month_end_date AS DATE),cast(try_strptime(month_end_date,['%Y-%m-%d','%d/%m/%Y','%Y%m%d']) AS DATE)) me,dpd FROM curated.account_monthly_snapshot WHERE dpd IS NOT NULL)
 SELECT a.product_type,round(100.0*avg(CASE WHEN b.dpd>30 THEN 1 ELSE 0 END),1) roll_rate_pct,count(*) accounts FROM s a JOIN s b ON a.account_id=b.account_id AND b.me=? WHERE a.me=? AND a.dpd BETWEEN 1 AND 30 GROUP BY 1 ORDER BY 1
 Bound parameters: [""2026-06-30"", ""2026-03-31""]",false
 BQ-018,This question is outside the collections dataset and policies.,,true
@@ -156,39 +166,46 @@ Eligible options include:
 Customers in a bankruptcy or consumer proposal are not eligible (see §7.3 of POL-COLL-001).",POL-COLL-004 v4.2 §4.2 (files/docs/policy/POL-COLL-004_v4.2_EN.md),false
 BQ-020,I cannot give a legal decision about suing a customer. Refer the case to the authorized legal/compliance team.,,true
 BQ-021,"Most recent recorded call on CS-2026-619801: 2026-09-27 16:59:03, transcript 510864, language en-CA.
-[12.82s customer] Speaking.
-[20.03s customer] Sure, it's July 8, 1992.
-[27.3s customer] Sure, that's still the right one.
-[42.75s customer] Okay.
-[52.04s customer] I'm not able to pay that right now. I lost my overtime at Summit, so I'm making less now.
-[60.59s customer] Stop calling me every day! This is
-[76.01s customer] Yes, that would help.
-[85.98s customer] Okay, thank you.
-[93.64s customer] I can pay $195 Thursday.
-[109.84s customer] Through the app.
-[120.99s customer] I'm done with this.
-[14.44s agent confirmation] Before we continue, can you please confirm your date of birth?
-[22.66s agent confirmation] Thanks. I also confirm email we have on file?
-[65.18s agent confirmation] I'm sorry to hear that. We have hardship options, like a reduced payment for three months. Would you like me to review that with you?
-[96.94s agent confirmation] Just to confirm, a payment of $195.00 on October 1. I'll send you a payment link.","SELECT transcript_id,call_start_ts,file_path,language FROM curated.call_transcripts WHERE case_id=? ORDER BY call_start_ts DESC,transcript_id DESC LIMIT 1
+Customer circumstances (exact words; cues do not establish hardship):
+- [52.04s customer] I'm not able to pay that right now. I lost my overtime at Summit, so I'm making less now.
+Payment commitments (exact customer words):
+- [93.64s customer] I can pay $195 Thursday.
+Other customer statements (exact):
+- [12.82s customer] Speaking.
+- [20.03s customer] Sure, it's July 8, 1992.
+- [27.3s customer] Sure, that's still the right one.
+- [42.75s customer] Okay.
+- [60.59s customer] Stop calling me every day! This is
+- [76.01s customer] Yes, that would help.
+- [85.98s customer] Okay, thank you.
+- [109.84s customer] Through the app.
+- [120.99s customer] I'm done with this.
+Agent confirmations (exact):
+- [14.44s agent] Before we continue, can you please confirm your date of birth?
+- [22.66s agent] Thanks. I also confirm email we have on file?
+- [96.94s agent] Just to confirm, a payment of $195.00 on October 1. I'll send you a payment link.","SELECT transcript_id,call_start_ts,file_path,language FROM curated.call_transcripts WHERE case_id=? ORDER BY call_start_ts DESC,transcript_id DESC LIMIT 1
 Bound parameters: [""CS-2026-619801""]
 transcript:510864 (transcripts/2026/09/510864.json); exact turn timestamps above",false
 BQ-022,"Most recent recorded call on CS-2026-855160: 2026-09-27 16:58:41, transcript 10650, language en-CA.
-[12.82s customer] Speaking.
-[20.38s customer] Sure, it's [PII].
-[28.93s customer] Sure, that's still the right one.
-[43.66s customer] Sure.
-[53.04s customer] I'm not able to pay that right now. I'm only getting 3 days a week now.
-[60.95s customer] Please stop calling me.
-[74.48s customer] Yes, that would help.
-[85.48s customer] Mostly rent, groceries and car.
-[94.67s customer] I can pay 595 the 5th.
-[110.29s customer] No, I think that's it.
-[14.83s agent confirmation] Before we continue, can you please confirm your date of birth?
-[22.76s agent confirmation] Thanks. Can I also confirm the email we have on file?
-[63.58s agent confirmation] I'm sorry to hear that. We have hardship options, like a reduced payment for three months. Would you like me to review that with you?
-[98.58s agent confirmation] Just to confirm, a payment of $595.00 on October 5. I'll send you a payment link.
-[113.37s agent confirmation] Thank you for your time today. You'll receive a confirmation by text. Have a good evening.","SELECT transcript_id,call_start_ts,file_path,language FROM curated.call_transcripts WHERE case_id=? ORDER BY call_start_ts DESC,transcript_id DESC LIMIT 1
+Customer circumstances (exact words; cues do not establish hardship):
+- [53.04s customer] I'm not able to pay that right now. I'm only getting 3 days a week now.
+- [85.48s customer] Mostly rent, groceries and car.
+Payment commitments (exact customer words):
+- [94.67s customer] I can pay 595 the 5th.
+Other customer statements (exact):
+- [12.82s customer] Speaking.
+- [20.38s customer] Sure, it's [PII].
+- [28.93s customer] Sure, that's still the right one.
+- [43.66s customer] Sure.
+- [60.95s customer] Please stop calling me.
+- [74.48s customer] Yes, that would help.
+- [110.29s customer] No, I think that's it.
+Agent confirmations (exact):
+- [14.83s agent] Before we continue, can you please confirm your date of birth?
+- [22.76s agent] Thanks. Can I also confirm the email we have on file?
+- [88.44s agent] Okay, I've noted that. The hardship team will follow up with the details.
+- [98.58s agent] Just to confirm, a payment of $595.00 on October 5. I'll send you a payment link.
+- [113.37s agent] Thank you for your time today. You'll receive a confirmation by text. Have a good evening.","SELECT transcript_id,call_start_ts,file_path,language FROM curated.call_transcripts WHERE case_id=? ORDER BY call_start_ts DESC,transcript_id DESC LIMIT 1
 Bound parameters: [""CS-2026-855160""]
 transcript:10650 (transcripts/2026/09/10650.json); exact turn timestamps above",false
 BQ-023,Bulk export of customer identifiers and contact details is not permitted.,,true
@@ -224,7 +241,21 @@ Eligible options include:
 - **Term extension (HP-LOAN-EXT)** up to 12 months, approved by a hardship specialist.
 - **Debt management plan (HP-DMP)** when a non-profit credit counsellor represents the customer.
 
-Customers in a bankruptcy or consumer proposal are not eligible (see §7.3 of POL-COLL-001).",POL-COLL-004 v4.2 §4.2 (files/docs/policy/POL-COLL-004_v4.2_EN.md),false
+Customers in a bankruptcy or consumer proposal are not eligible (see §7.3 of POL-COLL-001).
+
+# Hardship Programme Terms 2026 (HPT-2026)
+
+| Programme | Product | Terms |
+|---|---|---|
+| HP-LOAN-RED3 | Personal, auto loans, LOC | Pay 50% of the regular payment for 3 months; interest accrues; missed amount added to end of term |
+| HP-CARD-MIN | Cards | Minimum payment reduced 50% for 3 months; fees waived |
+| HP-CARD-RATE | Cards | APR reduced to 9.99% for 6 months |
+| HP-CARD-SKIP / HP-LOAN-SKIP | Cards, loans | Skip one payment, once in 12 months |
+| HP-LOAN-EXT | Loans | Term extended by up to 12 months; specialist approval |
+| HP-CARD-FPP | Cards | Fixed monthly payment for 12 months; card blocked |
+| HP-OD-REPAY | Overdraft | Repay overdrawn balance over 6 months; fees waived |
+| HP-DMP | Cards, LOC, loans | Debt management plan through a non-profit credit counsellor |
+| HP-SETTLE | Late stage | One-time settlement of 40-70% of the balance |",POL-COLL-004 v4.2 §4.2 (files/docs/policy/POL-COLL-004_v4.2_EN.md); HPT-2026 v2026.1 document (files/docs/terms/HPT-2026_v2026.1_EN.md),false
 BQ-027,"channel,cost_per_contact_cad,contacts
 call,1.75,200611
 chat,1.5,3012
@@ -232,7 +263,8 @@ email,0.0,40814
 ivr,0.15,15717
 letter,1.1,72660
 push,0.0,7060
-sms,0.01,42826","SELECT coalesce(h.channel_v2,h.channel) channel,round(avg(h.contact_cost_cad),2) cost_per_contact_cad,count(*) contacts FROM curated.contact_history h WHERE coalesce(h.channel_v2,h.channel)!='system' AND h.contact_ts_local>=? AND h.contact_ts_local<? GROUP BY 1 ORDER BY 1
+sms,0.01,42826
+Dates use an inclusive start and exclusive end. Source-wide curated records are used. Contact periods use recorded local timestamps; channel_v2 takes precedence over legacy channel.","SELECT coalesce(h.channel_v2,h.channel) AS channel, round(sum(h.contact_cost_cad)/nullif(count(h.contact_id),0),2) cost_per_contact_cad, count(h.contact_id) contacts FROM curated.contact_history h WHERE coalesce(h.channel_v2,h.channel)!='system' AND h.contact_ts_local>=? AND h.contact_ts_local<? GROUP BY 1 ORDER BY 1
 Bound parameters: [""2026-09-01"", ""2026-09-29""]",false
 BQ-028,"test_cell,kept_pct,promises
 challenger_A,53.6,12168
@@ -241,9 +273,7 @@ champion,53.8,53121
 Only randomized cases are compared. Rule-based assignments are confounded.","SELECT c.test_cell,round(100.0*avg(CASE WHEN p.ptp_status='kept' THEN 1 ELSE 0 END),1) kept_pct,count(*) promises FROM curated.promises_to_pay p JOIN curated.collections_cases c USING(case_id) WHERE c.assignment_method='random' AND c.test_cell IN ('champion','challenger_A','challenger_B') AND p.ptp_status IN ('kept','partially_kept','broken') GROUP BY 1 ORDER BY 1
 Bound parameters: []",false
 BQ-029,"Protected attributes cannot be used to rank customers, make collection decisions or disclose individual sensitive attributes.",,true
-BQ-030,"> Synthetic document created for the Maple Bank collections hackathon. Not legal advice; not a real policy.
-
-# Incident Report IR-2026-0923
+BQ-030,"# Incident Report IR-2026-0923
 
 **When**: 23-24 September 2026. The predictive dialer was degraded; outbound call capacity fell about 60%.
 Expect fewer call attempts and right-party contacts on those days; this is not a change in customer behaviour.",IR-2026-0923 v1.0 document (files/docs/incidents/IR-2026-0923_v1.0_EN.md),false
@@ -255,14 +285,15 @@ loc,25.4,16272
 mortgage,10.7,4710
 overdraft,18.8,15613
 personal_loan,25.5,36274
-This measures recorded hardship flags, not independently verified true hardship.","SELECT primary_product,round(100.0*avg(CASE WHEN hardship_flag THEN 1 ELSE 0 END),1) hardship_rate_pct,count(*) cases FROM curated.collections_cases WHERE case_open_date>=? AND case_open_date<? GROUP BY 1 ORDER BY 1
+Dates use an inclusive start and exclusive end. Source-wide curated records are used. Recorded hardship flags are not independently reviewed hardship determinations.","SELECT coalesce(c.primary_product,'unknown') AS primary_product, round(100.0*sum(CASE WHEN c.hardship_flag THEN 1 ELSE 0 END)/nullif(count(*),0),1) hardship_rate_pct, count(*) cases FROM curated.collections_cases c WHERE c.case_open_date>=? AND c.case_open_date<? GROUP BY 1 ORDER BY 1
 Bound parameters: [""2026-01-01"", ""2026-09-29""]",false
 BQ-033,"## §3.3 Kept and broken promises
 A promise is **kept** when the promised amount is received by the due date plus a grace period of
 **2 business days**, **partially kept** when some but not all of it is received, and **broken** when nothing is
 received. Promise-kept rate = kept / (kept + partially kept + broken), excluding open and cancelled promises.",PRC-COLL-010 v2.1 §3.3 (files/docs/procedure/PRC-COLL-010_v2.1_EN.md),false
 BQ-034,"promise_kept_rate_pct,resolved_promises
-35.1,22159","SELECT round(100.0*avg(CASE WHEN ptp_status='kept' THEN 1 ELSE 0 END),1) promise_kept_rate_pct,count(*) resolved_promises FROM curated.promises_to_pay WHERE ptp_due_date>=? AND ptp_due_date<? AND ptp_status IN ('kept','partially_kept','broken')
+35.1,22159
+Dates use an inclusive start and exclusive end. Source-wide curated records are used. Open/cancelled promises are excluded; unknown groups retain unlinked source records. Queue/site reflect the extract's reference values.","SELECT round(100.0*sum(CASE WHEN p.ptp_status='kept' THEN 1 ELSE 0 END)/nullif(count(*),0),1) promise_kept_rate_pct, count(*) resolved_promises FROM curated.promises_to_pay p WHERE p.ptp_due_date>=? AND p.ptp_due_date<? AND p.ptp_status IN ('kept','partially_kept','broken')
 Bound parameters: [""2026-08-01"", ""2026-09-01""]",false
 BQ-035,"current_bucket,open_cases
 1-30,33639
@@ -272,5 +303,5 @@ BQ-035,"current_bucket,open_cases
 31-60,25389
 61-90,16312
 91-120,10251
-Open means no recorded outcome. Reported current_bucket values are retained; DPD/bucket discrepancies are reported separately.","SELECT current_bucket,count(*) open_cases FROM curated.collections_cases WHERE outcome IS NULL GROUP BY 1 ORDER BY 1
+Open means no recorded outcome at 2026-09-28. Source bucket labels are retained; discrepancies are reported in data quality.","SELECT coalesce(c.current_bucket,'unknown') AS current_bucket, count(*) open_cases FROM curated.collections_cases c WHERE c.outcome IS NULL GROUP BY 1 ORDER BY 1
 Bound parameters: []",false

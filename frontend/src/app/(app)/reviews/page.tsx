@@ -6,6 +6,7 @@ import { Check, ChevronDown, History, Loader2, PencilLine, RotateCw, X } from "l
 import { PageHeader } from "@/components/page-header";
 import { RecordTable } from "@/components/record-table";
 import { RoleGate } from "@/components/role-gate";
+import { SourceList } from "@/components/source-list";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -170,10 +171,67 @@ function ReviewCard({ item, canDecide, onUpdated }: { item: ReviewItem; canDecid
         </CardAction>
       </CardHeader>
       <CardContent className="space-y-4">
+        {item.summary_evidence && (
+          <section aria-label="Supporting evidence" className="bg-muted/40 rounded-md border p-3">
+            <h3 className="text-muted-foreground mb-2 text-sm font-medium">Supporting evidence</h3>
+            <p className="text-sm leading-relaxed whitespace-pre-line">{item.summary_evidence}</p>
+          </section>
+        )}
+        {item.generation && (
+          <p className="text-muted-foreground text-sm">
+            {item.generation.status === "generated" && item.generation.provider.toLowerCase() === "gemini"
+              ? "Gemini-assisted draft based on the recorded facts and policy evidence."
+              : item.generation.status === "fallback"
+                ? "AI assistance was unavailable. This draft uses the recorded facts and local rules."
+                : "Draft prepared from the recorded facts and local rules."}
+          </p>
+        )}
+        {item.hardship_status && (
+          <div className="rounded-md border p-3 text-sm">
+            <h3 className="mb-1 font-medium">Hardship evidence</h3>
+            <p>
+              {item.hardship_status === "recorded"
+                ? "Financial hardship is recorded in the case history. Confirm the customer’s current circumstances."
+                : item.hardship_status === "possible"
+                  ? "Possible financial hardship needs confirmation by a reviewer."
+                  : "Financial hardship is not established by the available evidence. Hardship may still be present."}
+            </p>
+            {!!item.recorded_hardship_cases?.length && (
+              <div className="mt-2">
+                <p className="text-muted-foreground mb-1 text-xs">Recorded case references</p>
+                <SourceList sources={item.recorded_hardship_cases} />
+              </div>
+            )}
+          </div>
+        )}
         <div>
           <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Recommendation</h3>
           <p className="mt-1 leading-relaxed whitespace-pre-line">{item.recommendation}</p>
+          {item.recommendation_reason && (
+            <div className="mt-3">
+              <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Why this recommendation</h3>
+              <p className="mt-1 text-sm leading-relaxed whitespace-pre-line">{item.recommendation_reason}</p>
+            </div>
+          )}
         </div>
+        {!!item.policy_sources?.length && (
+          <div>
+            <h3 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">Policy sources</h3>
+            <SourceList sources={item.policy_sources} />
+          </div>
+        )}
+        {!!item.signals?.length && (
+          <Collapsible>
+            <CollapsibleTrigger asChild>
+              <Button variant="outline" size="sm" className="group">
+                Signals and evidence <ChevronDown className="transition-transform group-data-[state=open]:rotate-180" aria-hidden />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-3">
+              <RecordTable records={item.signals.map((signal) => ({ ...signal }))} caption="Brief signals and evidence" />
+            </CollapsibleContent>
+          </Collapsible>
+        )}
         <div>
           <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
             {item.decision === "edit" ? "Edited draft" : "Draft"}

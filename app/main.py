@@ -13,8 +13,8 @@ import joblib
 from fastapi import Depends,FastAPI,HTTPException,Query
 from fastapi.security import HTTPAuthorizationCredentials,HTTPBearer
 from pydantic import BaseModel,Field
-from app import storage
-from app.features import VERSION,TEXT_FEATURES,feature_sql,evidence,definitions
+from app import storage, runtime
+from app.features import VERSION,TEXT_FEATURES,feature_sql,evidence,definitions,text_features
 from app.settings import DATASET,DB,QUALITY,MODEL,MODEL_REPORT,ROOT,SNAPSHOT
 
 app=FastAPI(title='Collections Copilot',version='0.1.0')
@@ -77,7 +77,8 @@ class Login(BaseModel):
 
 @app.get('/api/health')
 def health():
-    return {'status':'ok','dataset_ready':QUALITY.exists() and DB.exists(),'snapshot_date':SNAPSHOT,'runtime_mode':'local; no paid API calls'}
+    configured=runtime.provider().configured
+    return {'status':'ok','dataset_ready':QUALITY.exists() and DB.exists(),'snapshot_date':SNAPSHOT,'runtime_mode':'optional Gemini; local calculations and classifier' if configured else 'local; no external API key','gemini_configured':configured}
 
 
 @app.post('/api/auth/login')
@@ -96,7 +97,7 @@ def overview(u=Depends(user)):
         if u['role']!='agent':
             all_cases=records(c,'SELECT count(*) open_cases,sum(total_overdue) overdue_cad FROM curated.collections_cases WHERE outcome IS NULL')[0]
             row.update(all_cases)
-    quality=json.loads(QUALITY.read_text())
+    quality=json.loads(QUALITY.read_text(encoding='utf-8'))
     with storage.connect() as s:
         pending=s.execute("SELECT count(*) FROM briefs WHERE status='pending'"+(' AND actor=?' if u['role']=='agent' else ''),[u['username']] if u['role']=='agent' else []).fetchone()[0]
     row.update(identity={k:quality['identity'].get(k,0) for k in ['matched','review','unmatched']},quality_issues=sum(x['failed_rows'] for x in quality['checks']),pending_reviews=pending)
@@ -138,8 +139,8 @@ def ask(body:Ask,u=Depends(user)):
     if not QUALITY.exists():raise HTTPException(503,'Dataset pipeline is not ready.')
     try:from app.insights import InsightEngine
     except ImportError:raise HTTPException(503,'Question-answering module is not ready.')
-    answer=InsightEngine(DB,DATASET).answer(body.question,role=u['role'])
-    with storage.connect() as s:storage.audit(s,u['username'],'ask','portfolio',{'question':body.question,'refused':answer.get('refused',False),'sql_or_sources':answer.get('sql_or_sources','')})
+    answer=runtime.answer(body.question,role=u['role'],db_path=DB,dataset_root=DATASET)
+    with storage.connect() as s:storage.audit(s,u['username'],'ask','portfolio',{'question':body.question,'refused':answer.get('refused',False),'sql_or_sources':answer.get('sql_or_sources',''),'generation':answer.get('generation'),'plan':answer.get('plan')})
     return answer
 
 
@@ -151,10 +152,14 @@ def brief(body:Brief,u=Depends(user)):
     if not MODEL.exists():raise HTTPException(503,'Local model is not trained. Run scripts/train_model.py.')
     with db() as c:
         authorize_customer(c,u,body.customer_id)
-        facts=records(c,'SELECT * FROM gold.customer_summary WHERE customer_id=?',[body.customer_id])[0]
+        fact_rows=records(c,'SELECT * FROM gold.customer_summary WHERE customer_id=?',[body.customer_id])
+        if not fact_rows:raise HTTPException(503,'The linked customer summary is unavailable; rebuild the data product.')
+        facts=fact_rows[0]
         profile=records(c,'SELECT cease_communication_flag,internal_do_not_call_flag,bankruptcy_flag,consumer_proposal_flag,deceased_flag FROM gold.customers WHERE customer_id=?',[body.customer_id])[0]
-        case_hold=c.execute('SELECT coalesce(bool_or(cease_contact_flag OR insolvency_hold_flag OR deceased_hold_flag),false) FROM gold.cases WHERE customer_id=? AND outcome IS NULL',[body.customer_id]).fetchone()[0]
-        features=records(c,feature_sql(True),[body.customer_id])[0]
+        active_cases=records(c,'SELECT case_id,hardship_flag,cease_contact_flag,insolvency_hold_flag,deceased_hold_flag FROM gold.cases WHERE customer_id=? AND outcome IS NULL ORDER BY case_id',[body.customer_id])
+        feature_rows=records(c,feature_sql(True),[body.customer_id])
+        if not feature_rows:raise HTTPException(503,'The customer financial features are unavailable.')
+        features=feature_rows[0]
         note=records(c,'SELECT note_id,note_text,note_language,note_ts FROM gold.latest_notes WHERE customer_id=?',[body.customer_id])
     bundle=joblib.load(MODEL)
     vector=[[features[k] for k in bundle['features']]]
@@ -162,26 +167,44 @@ def brief(body:Brief,u=Depends(user)):
     spans=evidence(note[0]['note_text']) if note else []
     signals=[{'name':k,'value':features[k],'evidence':f"agent_notes:{features.get('note_id')}"} for k in TEXT_FEATURES if features[k]]
     signals += [{'name':'overdue_cad','value':facts['total_overdue'],'evidence':'collections_cases: open cases at snapshot'}, {'name':'max_dpd','value':facts['max_dpd'],'evidence':'collections_cases: current_dpd'}]
-    hold=case_hold or any(profile[k] for k in ['bankruptcy_flag','consumer_proposal_flag','deceased_flag','cease_communication_flag'])
+    recorded_cases=[case['case_id'] for case in active_cases if case['hardship_flag']]
+    hold_names={'cease_contact_flag':'cease-contact restriction','insolvency_hold_flag':'insolvency hold','deceased_hold_flag':'deceased-customer hold'}
+    hold_evidence=[f"{label} on case {case['case_id']}" for case in active_cases for key,label in hold_names.items() if case[key]]
+    profile_names={'bankruptcy_flag':'bankruptcy','consumer_proposal_flag':'consumer proposal','deceased_flag':'deceased-customer restriction','cease_communication_flag':'cease-communication restriction'}
+    hold_evidence += [f'{label} on the customer record' for key,label in profile_names.items() if profile[key]]
+    hold=bool(hold_evidence)
+    hardship_status='recorded' if recorded_cases else 'possible' if probability>=.5 or spans else 'not_established'
+    signals += [{'name':'recorded_hardship','value':True,'evidence':f'collections_cases:{case_id}'} for case_id in recorded_cases]
     french=(facts.get('preferred_language') or '').lower().startswith('fr')
     if hold:
         recommendation='Hold contact and route to a supervisor to verify the recorded restriction.'
-        draft='Internal review only. Check the recorded contact or insolvency restriction before taking any action.'
+        recommendation_reason='Contact is on hold because the source records '+ '; '.join(hold_evidence)+'. These restrictions take priority over hardship cues or model scores.'
+        draft='Internal review only. Check the recorded contact, insolvency or deceased-customer restriction before taking any action.'
         policy_sources=['POL-COLL-001 v3.0 §7.3','POL-COLL-004 v4.2 §4.2']
+    elif recorded_cases:
+        recommendation='Financial hardship is recorded. Review affordability and eligible support options before requesting payment.'
+        recommendation_reason='Hardship is recorded on open case(s) '+', '.join(recorded_cases)+'. This source flag remains in force even when the latest note has no financial cue; it is not a reviewed eligibility determination.'
+        draft=('Une difficulté financière est enregistrée dans votre dossier. Examinons votre situation et les options de soutien possibles avant de discuter d’un paiement abordable.' if french else 'Financial difficulty is recorded on your case. Let’s confirm your circumstances and review suitable support options before discussing an affordable payment.')
+        policy_sources=['POL-COLL-004 v4.2 §4.2','POL-COLL-004 v4.2 §4.3']
     elif probability>=.5 or spans:
         recommendation='Review the financial hardship evidence. Confirm affordability and eligible support options before requesting payment.'
+        cue_names=[key.replace('_',' ') for key in TEXT_FEATURES if any(text_features(span)[key] for span in spans)]
+        recommendation_reason=('Possible financial hardship needs review because '+', '.join(cue_names)+f" cues were found in note {features.get('note_id')}." if spans else 'The local review model score triggered review using the recorded financial cue vector.')+' This is a review signal, not a confirmed hardship or eligibility determination.'
         draft=('Je comprends que vos finances sont difficiles en ce moment. Nous pouvons examiner les options de soutien et un paiement abordable avec vous.' if french else 'I understand that money is difficult right now. We can review support options and an affordable payment together.')
         policy_sources=['POL-COLL-004 v4.2 §4.2','POL-COLL-004 v4.2 §4.3']
     else:
         recommendation='Review the latest case and confirm the customer’s circumstances before agreeing on a next step.'
-        draft=('Examinons votre situation et discutons de la prochaine etape qui vous convient.' if french else 'Let’s review your situation and discuss a suitable next step together.')
+        recommendation_reason='No hardship flag is recorded on the open cases, and the latest-note cues and model did not trigger a financial-hardship signal. This does not establish that hardship is absent; confirm the customer’s circumstances.'
+        draft=('Examinons votre situation et discutons de la prochaine étape qui vous convient.' if french else 'Let’s review your situation and discuss a suitable next step together.')
         policy_sources=['POL-COLL-001 v3.0 §5.1','PRC-COLL-010 v2.1 §3.1']
     if profile['internal_do_not_call_flag']:
         recommendation+=' Internal do-not-call flag is recorded; do not initiate a call.'
-    payload={'brief_id':str(uuid.uuid4()),'customer_id':body.customer_id,'summary':f"{facts['open_cases']} open case(s), CAD {facts['total_overdue']:,.2f} overdue. "+('Financial evidence: '+' '.join(spans) if spans else 'No supported financial text cue found in the latest note.'),'signals':signals,'recommendation':recommendation,'policy_sources':policy_sources,'draft':draft,'status':'pending','model':{'name':'Financial hardship review triage','version':VERSION,'review_probability':round(probability,4),'input_features':bundle['features']},'features':features}
+        recommendation_reason+=' A separate internal do-not-call flag blocks calling.'
+    payload={'brief_id':str(uuid.uuid4()),'customer_id':body.customer_id,'summary':f"{facts['open_cases']} open case(s), CAD {facts['total_overdue']:,.2f} overdue. "+('Financial evidence: '+' '.join(spans) if spans else 'No supported financial text cue found in the latest note.'),'signals':signals,'recommendation':recommendation,'recommendation_reason':recommendation_reason,'hardship_status':hardship_status,'recorded_hardship_cases':recorded_cases,'policy_sources':policy_sources,'draft':draft,'status':'pending','model':{'name':'Financial hardship review triage','version':VERSION,'review_probability':round(probability,4),'input_features':bundle['features']},'features':features}
+    runtime.enrich_brief(payload)
     with storage.connect() as s:
         s.execute('INSERT INTO briefs(brief_id,customer_id,actor,payload,status,created_at) VALUES(?,?,?,?,?,?)',(payload['brief_id'],body.customer_id,u['username'],json.dumps(payload,default=str),'pending',storage.now()))
-        storage.audit(s,u['username'],'generate_brief',payload['brief_id'],{'customer_id':body.customer_id,'model_version':VERSION,'policy_sources':policy_sources})
+        storage.audit(s,u['username'],'generate_brief',payload['brief_id'],{'customer_id':body.customer_id,'model_version':VERSION,'policy_sources':policy_sources,'hardship_status':hardship_status,'recorded_hardship_cases':recorded_cases,'recommendation_reason':recommendation_reason,'generation':payload['generation']})
     return payload
 
 
@@ -231,15 +254,15 @@ def audit_log(u=Depends(supervisor)):
 def quality(u=Depends(user)):
     if u['role']=='agent':raise HTTPException(403,'Data quality reports require an analyst or supervisor.')
     if not QUALITY.exists():raise HTTPException(503,'Dataset pipeline is not ready.')
-    return json.loads(QUALITY.read_text())
+    return json.loads(QUALITY.read_text(encoding='utf-8'))
 
 
 @app.get('/api/features')
 def feature_registry(u=Depends(user)):
     if u['role']=='agent':raise HTTPException(403,'The feature registry requires an analyst or supervisor.')
     p=ROOT/'data/features-report.json'
-    result=json.loads(p.read_text()) if p.exists() else {'version':VERSION,'definitions':definitions(),'parity':{'checked':0,'mismatches':None}}
+    result=json.loads(p.read_text(encoding='utf-8')) if p.exists() else {'version':VERSION,'definitions':definitions(),'parity':{'checked':0,'mismatches':None}}
     if MODEL_REPORT.exists():
-        report=json.loads(MODEL_REPORT.read_text());report.pop('restricted_fairness_audit',None);result['model']=report
+        report=json.loads(MODEL_REPORT.read_text(encoding='utf-8'));report.pop('restricted_fairness_audit',None);result['model']=report
     else:result['model']={'status':'not_trained'}
     return result

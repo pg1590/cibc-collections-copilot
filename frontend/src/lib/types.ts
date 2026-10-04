@@ -5,6 +5,15 @@
 export type Role = "analyst" | "agent" | "supervisor";
 export type ApiRecord = Record<string, unknown>;
 
+export interface Generation {
+  provider: string;
+  model?: string;
+  status: string;
+  detail?: string;
+}
+
+export type HardshipStatus = "recorded" | "possible" | "not_established";
+
 export interface User {
   username: string;
   role: Role;
@@ -64,6 +73,7 @@ export interface CustomerDetail {
 
 export interface AskResponse {
   answer: string;
+  explanation?: string;
   sql_or_sources: string;
   refused: boolean;
   reason: string | null;
@@ -71,6 +81,8 @@ export interface AskResponse {
   sources: unknown[];
   execution_ms: number;
   snapshot_date: string;
+  generation?: Generation;
+  plan?: ApiRecord;
 }
 
 export interface Signal {
@@ -83,6 +95,7 @@ export interface Brief {
   brief_id: string;
   customer_id: string;
   summary: string;
+  summary_evidence?: string;
   signals: Signal[];
   recommendation: string;
   policy_sources: unknown[];
@@ -90,6 +103,10 @@ export interface Brief {
   status: string;
   model: { name: string; version: string };
   features: ApiRecord;
+  recommendation_reason?: string;
+  hardship_status?: HardshipStatus;
+  recorded_hardship_cases?: string[];
+  generation?: Generation;
 }
 
 export type Decision = "approve" | "reject" | "edit";
@@ -98,6 +115,7 @@ export interface ReviewItem {
   brief_id: string;
   customer_id: string;
   summary: string;
+  summary_evidence?: string;
   recommendation: string;
   draft: string;
   status: string;
@@ -105,6 +123,12 @@ export interface ReviewItem {
   decision: Decision | null;
   reason: string | null;
   reviewer: string | null;
+  recommendation_reason?: string;
+  hardship_status?: HardshipStatus;
+  recorded_hardship_cases?: string[];
+  generation?: Generation;
+  policy_sources?: unknown[];
+  signals?: Signal[];
 }
 
 export interface AuditEvent {

@@ -1,6 +1,6 @@
 # Collections Copilot — Adda Wale
 
-Collections Copilot is a local web application built for the CIBC hackathon. It helps a bank's collections team understand overdue accounts, answer portfolio and policy questions, and prepare customer briefs for supervisor review.
+Collections Copilot is a web application built for the CIBC hackathon. It helps a bank's collections team understand overdue accounts, answer portfolio and policy questions, and prepare customer briefs for supervisor review. Its data, calculations and review records run locally; Gemini assistance is optional.
 
 **Team:** Prakhar Gupta, Aryan Shrivastava, Krish Agarwal and Ved Maurya.
 
@@ -27,7 +27,7 @@ Approval records a review decision. The app does not send messages, initiate cal
 
 ## Architecture
 
-The diagram shows the implemented local architecture. Data preparation happens before the application is started; the running application reads the prepared data and stores review activity separately.
+The diagram shows the implemented architecture. Data preparation happens before the application is started; the running application reads the prepared data and stores review activity separately. Dashed links show optional Gemini assistance, which requires a locally configured key.
 
 ```mermaid
 flowchart TB
@@ -54,7 +54,7 @@ flowchart TB
         browser["Analyst, agent or supervisor<br/>Next.js web interface"]
         api["FastAPI backend<br/>Sign-in and role-based access"]
         customer["Customer 360 lookups"]
-        insight["2. Insight and NLP<br/>Fixed SQL plans, policy retrieval and transcript evidence"]
+        insight["2. Insight and NLP<br/>Validated metric plans, policy retrieval and transcript evidence"]
         brief["4. Models and Decisioning<br/>Live features, model score, contact rules and draft"]
         review["Supervisor review<br/>Approve, reject or edit with a reason"]
         state[("SQLite<br/>Sessions, briefs, decisions and audit log")]
@@ -70,9 +70,14 @@ flowchart TB
     end
 
     documents["Current policy documents<br/>and recorded call transcripts"]
+    gemini["Optional Gemini<br/>Structured plans and verified evidence selection"]
     customer -->|Read| warehouse
     insight -->|Read-only queries| warehouse
     documents --> insight
+    insight -.->|Question and permitted evidence| gemini
+    gemini -.->|Validated plan or complete source excerpts| insight
+    brief -.->|Redacted facts and rule explanation| gemini
+    gemini -.->|Verified supporting evidence| brief
     warehouse -->|Customer facts and contact restrictions| brief
     features -->|Same definitions used offline and live| brief
     model --> brief
@@ -82,13 +87,15 @@ flowchart TB
 ### The four connected layers
 
 1. **Data Product Factory:** preserve the original source data, normalize dates and field types, count quality issues, and link customer IDs across systems. Raw data is the original input; curated data has normalized types; golden data is the combined customer view. Uncertain identity matches remain marked for review or unmatched rather than being accepted automatically.
-2. **Insight and NLP (natural language processing):** interpret supported plain-English questions using a local planner. Portfolio questions run fixed SQL templates with bound parameters; policy questions retrieve current document sections. Answers show their SQL or sources. Requests for bulk personal information, protected-attribute decisions, arbitrary commands or unrelated topics are refused.
+2. **Insight and NLP (natural language processing):** interpret supported plain-English questions using a local planner or optional Gemini structured planning. The backend validates the metric, grouping and period, then compiles reviewed SQL with bound parameters; policy questions retrieve current document sections. Answers show their SQL or sources. Requests for bulk personal information, protected-attribute decisions, arbitrary commands or unrelated topics are refused.
 3. **Feature Store:** calculate reusable inputs such as open case count, overdue balance, payment promise history, recent contacts and financial cues in notes. A feature is a defined value used by the app or model. Batch calculation and live brief generation share versioned definitions, reducing the risk that training and serving use different values.
-4. **Models/Decisioning:** use a local classifier to help identify notes that need financial hardship review. Combine its score with customer facts, evidence and contact restrictions to prepare a brief. Recorded cease-contact, insolvency and deceased holds take priority over the model. A supervisor makes the review decision.
+4. **Models/Decisioning:** use a local classifier to help identify notes that need financial hardship review. Combine its score with customer facts, evidence and contact restrictions to prepare a brief. Recorded hardship on an open case remains relevant even when the latest note has no cue. Recorded cease-contact, insolvency and deceased holds take priority over hardship and model signals. A supervisor makes the review decision.
 
 ### Which AI model is used?
 
-**No external large language model (LLM) API is connected, including a free-tier API. Runtime API cost is zero.** Ask Collections uses fixed query plans and document retrieval; call summaries extract source evidence; drafts use templates and rules.
+**The application runs without an external API key.** Local question plans, document retrieval, extractive evidence and brief rules remain available. The API and benchmark exporter share an optional Gemini integration for structured question planning and source-backed explanations. Its supported default is `gemini-3.8-flash`; `gemini-3.5-flash-lite` is an alternative.
+
+Gemini selects a supported metric, grouping and date range; the backend validates the plan and compiles reviewed local SQL. Model-written SQL is never executed. Numeric answers and result tables come from DuckDB. Optional explanations select complete supplied evidence units, such as policy paragraphs or a result row; source IDs and the entire quoted unit must match before display. Fragment quotations and unsupported narrative are rejected. Numeric answers, original brief facts, recommendations and drafts are preserved; supporting evidence appears separately. If Gemini is unavailable or its response fails validation, the application uses local behavior. Recorded hardship, contact restrictions and supervisor approval stay under explicit application rules.
 
 The trained model is **class-balanced logistic regression**, implemented with scikit-learn. It uses six binary financial cues from English and French notes: income loss, income reduction, income delay, payment difficulty, hardship request and expense pressure. It does not receive unrestricted raw text or protected attributes. Its score is a review aid, not a hardship eligibility decision.
 
@@ -107,7 +114,9 @@ The public labelled set contains 500 notes. Training uses 374 notes and evaluati
 
 ## Run locally
 
-Run these commands from the repository root unless a step says otherwise. You need **Python 3.10+**, **Node.js 20.9+**, and roughly **12 GB of disk space** for the release ZIP, extracted files and generated data, plus room for dependencies and build output. The optional voice pack is not required. Internet access is needed to install dependencies and download the dataset; the prepared app runs locally without an external AI service.
+Run these commands from the repository root unless a step says otherwise. Use **Python 3.10 (tested)**, **Node.js 20.9+**, and roughly **12 GB of disk space** for the release ZIP, extracted files and generated data, plus room for dependencies and build output. The optional voice pack is not required. Internet access is needed to install dependencies and download the dataset; the prepared app runs locally without an external AI service.
+
+The Python checks were run on **Python 3.10** on Linux. Other Python versions and Windows have not been verified. The commands below use Linux/macOS paths. On Windows PowerShell, create the environment with `python -m venv .venv`, set `$env:PYTHONUTF8="1"`, and replace `.venv/bin/python` with `.venv\Scripts\python.exe` in Python commands. The npm commands are the same.
 
 ### 1. Prepare the data and model
 
@@ -159,6 +168,22 @@ These are defaults for the local synthetic-data demo. [.env.example](.env.exampl
 
 The agent account defaults to the source agent with the most open assigned cases. `COPILOT_AGENT_ID` can select another actual source agent. Role and customer access checks run on the backend, so hiding a button is not the access control mechanism.
 
+### Optional Gemini configuration
+
+Use a **Google AI Studio Free-tier project** and confirm its quota and billing settings in your account. The application cannot inspect the project's billing tier or guarantee zero provider charges. It does not need an API key for local operation.
+
+Save the key locally in the ignored `data/gemini-key.txt`, or export `GEMINI_API_KEY` or `GEMINI_API_KEY_FILE` in the backend terminal. Do not put a key in frontend settings, Git or chat. The app does not automatically read `.env` files. Restart the backend after changing configuration.
+
+| Variable | Behavior |
+|---|---|
+| `COPILOT_GEMINI_ENABLED` | Defaults to `1`; no key means local mode. Set `0` to disable external calls. |
+| `COPILOT_GEMINI_MODEL` | Defaults to `gemini-3.8-flash`; also accepts `gemini-3.5-flash-lite`. |
+| `COPILOT_GEMINI_TIMEOUT` | Defaults to 15 seconds; capped at 30 seconds per request. |
+| `COPILOT_GEMINI_MAX_CALLS` | Defaults to 60; hard cap of 100 requests per service process/worker. Each worker and restart has its own budget. |
+| `COPILOT_GEMINI_TEXT_EVIDENCE` | Defaults to `0`; note and transcript text stays local. Set `1` to permit selected text evidence. |
+
+Requests have no automatic retries, use `store=false`, and share a bounded process-local cache. These controls limit calls; they do not replace provider quota or billing controls. By default, submitted metric questions/catalogs, permitted aggregate results, current policy paragraphs, and redacted brief facts/rule explanations can be sent to Google. Note and transcript text remains local unless explicitly enabled. The full dataset is not uploaded.
+
 ## Try the complete workflow
 
 1. Sign in as **supervisor** and open **Overview**. The current source snapshot contains **96,000 open collections cases**; open means no recorded outcome.
@@ -188,7 +213,7 @@ The agent account defaults to the source agent with the most open assigned cases
 From the repository root, run the automated tests and numeric development-answer validation:
 
 ```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q --junitxml=data/test-results.xml
 .venv/bin/python scripts/validate_dev.py
 ```
 
@@ -236,7 +261,7 @@ npm run build
 
 Current local verification:
 
-- **19 automated tests passed**, covering role checks, assigned-customer access, query/refusal boundaries, persistent reviews, audit integrity and financial features.
+- **131 automated tests passed**, covering roles, hardship/hold priority, metric cohorts/groupings, provider failures, privacy, evidence validation and persistent reviews/audit.
 - **35 released benchmark rows generated**, including six refusals and no unresolved results.
 - **12/12 numeric development questions matched** organizer reference SQL within tolerance.
 - **100 customers checked** for offline/live feature consistency, with zero mismatches.
@@ -252,6 +277,9 @@ These are local checks, not an organizer score. Hidden questions and future extr
 | `frontend/` | Next.js web application and frontend dependency lock file. |
 | `app/main.py` | FastAPI routes, authentication, customer access and review workflow. |
 | `app/insights.py` | Question plans, policy retrieval, transcript evidence and refusals. |
+| `app/metric_plans.py` | Validated metric catalog and fixed SQL compiler used for local and Gemini plans. |
+| `app/runtime.py`, `app/gemini.py` | Shared API/benchmark pipeline and optional stateless provider adapter. |
+| `app/policy_summary.py` | Extractive policy paragraphs and grouped, timestamped transcript statements. |
 | `app/features.py` | Versioned feature definitions shared by training, batch calculation and live briefs. |
 | `app/storage.py` | Persistent sessions, briefs, decisions and audit records. |
 | `scripts/` | Dataset download, data preparation, model training, verification and benchmark export. |
@@ -279,18 +307,31 @@ These are local checks, not an organizer score. Hidden questions and future extr
 
 ## Scope and limitations
 
-The current build runs locally. DuckDB replaces the originally proposed CockroachDB to simplify setup and query the release's Parquet history directly. The Feature Store uses shared versioned definitions inside the application rather than a separate hosted service. Voice audio processing, external LLM calls and optional orchestration frameworks are outside this build.
+### Changes from the phase-one design
+
+| Phase-one proposal | Current implementation |
+|---|---|
+| CockroachDB for the data platform | DuckDB for local analytics and release Parquet history; SQLite for sessions and reviews. |
+| A separately hosted feature service | Shared, versioned Python/SQL definitions for training, batch calculation and live briefs. |
+| Broader LLM-assisted answers | Reviewed local metric plans and retrieval, with optional Gemini planning and verified source excerpts. |
+| LLM hardship-cue extraction | Six explicit bilingual financial cues and a locally evaluated logistic classifier; Gemini evidence selection does not change cues or decisions. |
+| AI schema-mapping suggestions | Mappings grounded in the released schema and actual headers; no speculative mapping step. |
+| Specialist approval role | Supervisor reviews every brief with a reason; a separate specialist role is not implemented. |
+| Broader C360 summary contract | Eight summary fields plus linked accounts, cases, notes and feature views. Consent aggregates, 30/90-day counts, per-customer DQ status and reviewed hardship status are not added to the summary. |
+| Voice and orchestration extensions | Recorded transcript evidence is supported; voice audio processing and optional orchestration frameworks remain outside the build. |
+
+The application still requires supervisor approval for every brief. It does not initiate customer contact or make programme eligibility decisions automatically.
 
 Customer matching is conservative: unresolved identities are excluded from linked accounts and counted in the quality report. The pipeline currently produces **1,014,631 golden customer records**; this is not a claim that it has perfectly recovered the release's underlying one million people. Source identifiers retain leading zeros, invalid typed values remain available in raw data, and only empty CSV fields become null. Portfolio totals include source cases with unresolved customer references, while C360 views contain linked cases, so their totals can differ.
 
-The question planner supports defined metrics and policy topics rather than unrestricted conversation. The [broader accuracy audit](docs/reviews/accuracy-readiness-audit.md) found that some requested groupings return overall or differently grouped results, and some metric examples are incorrectly refused. These gaps still need correction; the 12/12 numeric development result applies to those specific questions. The financial model can miss unfamiliar wording and nonfinancial hardship; its evaluation does not prove fairness, production readiness or improved recovery rates. Protected attributes are excluded from model inputs and serving views; restricted group data is used only for local evaluation.
+The question planner supports defined metrics and policy topics rather than unrestricted conversation. Requested supported groupings are preserved; unsupported groups and ambiguous cohorts require clarification. Historical roll-rate questions need two available month ends; generic collected-amount requests clarify the distinction between all case-account payments and payments against promises. The [accuracy audit](docs/reviews/accuracy-readiness-audit.md) records the original gaps; the [correctness release](docs/reviews/correctness-gemini-release.md) records fixes and remaining limits. The 12/12 numeric development result applies to those particular questions and does not establish correctness for all phrasings or hidden questions. The financial model can miss unfamiliar wording and nonfinancial hardship; its evaluation does not prove fairness, production readiness or improved recovery rates. Protected attributes are excluded from model inputs and serving views; restricted group data is used only for local evaluation.
 
 If the app reports that the dataset is not ready, finish `scripts/build_data.py`. If brief generation reports that the model is missing, stop the backend, run `scripts/train_model.py`, then restart it. If requests fail, check that the backend is running on port 8000 and the frontend on port 3000.
 
-The architecture and nine-slide presentation PDF are prepared. The user will record a **demo video of at most five minutes** using the walkthrough. Browser verification, accessible video upload and the 19:00 extra-question benchmark run remain. Invite **`cibchack26` by 17:00 IST** through the owner's GitHub collaborator settings; invitation/access is unverified. Keep the repository private. The final form allows **one submission per team**, requiring the repo link, code ZIP, accessible video link and presentation PDF. No form submission or external deployment has been performed. The build deadline is **4 October 2026 at 21:00 IST**; later commits are excluded.
+The architecture and nine-slide presentation PDF are prepared. The user will record a **demo video of at most five minutes** using the walkthrough. Browser verification, accessible video upload and the 19:00 extra-question benchmark run remain. Invite **`cibchack26` by 17:00 IST** through the owner's GitHub collaborator settings; the owner confirmed the invitation appears in repository access; acceptance has not been independently checked. Keep the repository private. The final form allows **one submission per team**, requiring the repo link, code ZIP, accessible video link and presentation PDF. No form submission or external deployment has been performed. The build deadline is **4 October 2026 at 21:00 IST**; later commits are excluded.
 
 ## AI tool disclosure
 
-Codex coordinates implementation, integrates modules and independently checks the result. Claude Opus 5.5 at high effort provided architecture/build-plan reviews and implemented the frontend. An assigned Claude insight implementation attempt did not complete; Codex implemented and verified the question engine. The original Feature Dev architect consultation used its default Sonnet subagent. Raw prompts and responses remain local and ignored by Git.
+Codex coordinates implementation, integrates modules and independently checks the result. Claude Opus 5.5 at high effort provided architecture, improvement-plan and runtime reviews, implemented the original frontend, and implemented the extractive policy/transcript formatting module. Actual response metadata was checked. The larger Claude insight implementation attempts did not complete; Codex implemented and verified the engine and metric compiler. The original Feature Dev architect consultation used its default Sonnet subagent. Raw prompts and responses remain local and ignored by Git.
 
-These tools assisted development and are separate from the application's runtime model. No external LLM provider is currently configured. Later provider access can add narration or broader question planning after credentials, a spend limit and verification are configured.
+These tools assisted development and are separate from the application's runtime models. Optional Gemini assistance requires a locally configured key; the local classifier, calculations and review workflow remain available without one. Provider failures and invalid responses are tested with mocked HTTP. A live Gemini call remains unverified until the key is available; mocked checks do not establish provider availability or server-side schema compatibility.
