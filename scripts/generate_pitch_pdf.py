@@ -12,7 +12,8 @@ from html import escape
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.settings import ROOT, DATASET, QUALITY, MODEL_REPORT
+from app.settings import ROOT, DATASET, QUALITY, MODEL_REPORT, DB, SNAPSHOT
+import duckdb
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor
 from reportlab.lib.styles import ParagraphStyle
@@ -32,7 +33,22 @@ W, H = 960, 540
 def generate(output):
     quality = json.loads(QUALITY.read_text(encoding='utf-8'))
     model = json.loads(MODEL_REPORT.read_text(encoding='utf-8'))
-    parity = json.loads((ROOT / 'data/features-report.json').read_text(encoding='utf-8'))['parity']
+    parity = json.loads((ROOT / 'data/feature-parity.json').read_text(encoding='utf-8'))
+    contract = json.loads((ROOT / 'data/c360-contract-validation.json').read_text(encoding='utf-8'))
+    if parity.get('status') != 'pass' or parity.get('mismatch_count') != 0 or any(parity.get('key_coverage', {}).values()):
+        raise ValueError('Feature parity/key checks have failures. Run scripts/check_feature_parity.py.')
+    if not parity.get('sample_size') or len(parity.get('key_coverage', {})) != 4:
+        raise ValueError('Feature parity report is missing sample or key coverage.')
+    if contract.get('failed') or contract.get('skipped') or not contract.get('database_unchanged'):
+        raise ValueError('C360 contract checks are incomplete or failed.')
+    with duckdb.connect(str(DB), read_only=True) as db:
+        demo = db.execute('SELECT s.open_cases,s.total_overdue,s.max_dpd,c.case_id,c.case_status,c.hardship_flag,c.insolvency_hold_flag,g.consumer_proposal_flag '
+            'FROM gold.customer_summary s JOIN gold.cases c USING(customer_id) JOIN gold.customers g USING(customer_id) '
+            'WHERE s.customer_id=? AND c.outcome IS NULL ORDER BY c.case_id', ['HAC-4447']).fetchall()
+        portfolio_open, first_bucket = db.execute("SELECT count(*) FILTER(WHERE outcome IS NULL), count(*) FILTER(WHERE outcome IS NULL AND current_bucket='1-30') FROM curated.collections_cases").fetchone()
+    if len(demo) != 1 or not all(demo[0][5:]):
+        raise ValueError('HAC-4447 demo restrictions differ; recheck the customer and script.')
+    open_cases, overdue, dpd, case_id, case_status, *_ = demo[0]
     with (ROOT / 'submission/benchmark_answers.csv').open(newline='',encoding='utf-8-sig') as stream:
         benchmark = list(csv.DictReader(stream))
     with (DATASET / 'data/benchmark_questions.csv').open(newline='',encoding='utf-8-sig') as stream:
@@ -125,7 +141,7 @@ def generate(output):
     nodes = [
         (52, 282, '1  Data Product Factory', 'Normalize sources and match IDs<br/>DuckDB raw, curated and C360'),
         (528, 282, '2  Insight and NLP', 'Local SQL and cited policies<br/>Optional local Whisper audio evidence'),
-        (52, 111, '3  Feature Store', 'Financial text and ASR review cues<br/>Shared versioned definitions'),
+        (52, 111, '3  Feature Store', 'Financial note cues and case context<br/>Shared offline and live definitions'),
         (528, 111, '4  Models and Decisioning', 'Classifier + explicit hardship rules<br/>Supervisor decision and SQLite audit'),
     ]
     for x, y, label, body in nodes:
@@ -164,14 +180,14 @@ def generate(output):
 
     # 5. Concrete outputs, grounded in verified development examples.
     page(5, 'Answers with inspectable evidence',
-         'Local SQL calculates results; optional Gemini selects validated plans and exact source evidence.',
-         'Sources: public development references and PRC-COLL-010 v2.1 section 3.3')
-    text(52, 355, 410, 'Promise-kept rate<br/>August 2026', 24, bold=True, maximum=75)
-    text(52, 258, 410, '35.1%', 54, TEAL, True)
-    text(52, 181, 410, '22,159 resolved promises<br/>SQL shows the period and denominator', 18, MUTED, maximum=64)
-    text(528, 355, 380, 'Promise-to-pay grace period', 24, bold=True, maximum=75)
-    text(528, 258, 380, '2 business days', 32, TEAL, True, maximum=50)
-    text(528, 193, 380, 'Current procedure citation:<br/>PRC-COLL-010 v2.1 section 3.3', 18, MUTED, maximum=66)
+         'Local SQL calculates results. Optional Gemini selects validated plans and exact source evidence.',
+         'Sources: curated collections cases and POL-COLL-001 v3.0 section 7.3')
+    text(52, 355, 410, 'Open collections cases<br/>28 September 2026', 24, bold=True, maximum=75)
+    text(52, 258, 410, f'{portfolio_open:,}', 54, TEAL, True)
+    text(52, 181, 410, f'{first_bucket:,} in the 1-30 DPD bucket<br/>SQL and result rows remain inspectable', 18, MUTED, maximum=64)
+    text(528, 355, 380, 'Consumer proposal policy', 24, bold=True, maximum=75)
+    text(528, 270, 380, 'All collection<br/>contact stops', 30, TEAL, True, maximum=85)
+    text(528, 170, 380, 'From the filing date<br/>POL-COLL-001 v3.0 section 7.3', 18, MUTED, maximum=66)
     text(52, 96, 856, 'Protected-attribute ranking, bulk personal-data exports and unrelated requests receive an explicit refusal.', 18, maximum=52)
     c.showPage()
 
@@ -197,14 +213,18 @@ def generate(output):
     c.showPage()
 
     # 7. Human decision point and backend controls.
-    page(7, 'Human review and access controls',
-         'The system prepares assistance. A supervisor records the decision and reason.')
-    item(52, 359, 410, 'Pending brief',
-         'Customer facts, recorded hardship, possible cues, a rule reason and a proposed message.')
-    item(52, 218, 410, 'Supervisor decision',
-         'Approve, reject or edit with a reason. The draft and decision persist, and the audit records the change.')
-    text(552, 359, 356, '<b>Agent</b><br/>Assigned customers and own briefs<br/><br/><b>Analyst</b><br/>Portfolio questions and data checks<br/><br/><b>Supervisor</b><br/>Review decisions and audit access', 18, maximum=280)
-    text(52, 86, 856, 'Recorded contact holds take priority. Approval does not send a message, initiate a call or change source records.', 18, maximum=52)
+    page(7, 'HAC-4447: contact hold takes priority',
+         'A concrete example of source restrictions overriding hardship and model cues.',
+         f'Sources: C360 snapshot {SNAPSHOT}, {case_id}, POL-COLL-001 v3.0 section 7.3')
+    item(52, 358, 410, 'Customer and case facts',
+         f'{open_cases} open card case. CAD {overdue:,.2f} overdue, {dpd} days past due. Case {case_id} is in {case_status}.', 18)
+    item(52, 216, 410, 'Historical audio evidence',
+         '53-second supplied call. Local Whisper detects a payment difficulty candidate. Words and speakers need human review.', 18)
+    item(538, 358, 370, 'Recorded restriction',
+         'Consumer proposal and insolvency hold override recorded hardship. The brief remains pending.', 18)
+    item(538, 234, 370, 'Internal note for supervisor review',
+         'Do not contact this customer. All collection contact stops from the filing date under section 7.3.', 18)
+    text(52, 85, 856, 'Editing the internal note preserves the hold and records an audit event. Approval does not contact the customer.', 17, maximum=48)
     c.showPage()
 
     # 8. Scope of evidence and known limitations.
@@ -214,18 +234,20 @@ def generate(output):
     rows = [
         ('Numeric development references', f'{matched}/{len(numeric)} match within tolerance'),
         ('Generated benchmark rows', f'{len(benchmark)} rows, {sum(r["refused"] == "true" for r in benchmark)} refusals'),
-        ('Core, role, provider and evidence tests', f"{passed} automated tests passed"),
-        ('Offline / live feature definitions', f'{parity["checked"]} customers, {parity["mismatches"]} mismatches'),
-        ('Frontend and voice integration', 'Build, WAV and ASR HTTP checks pass'),
+        ('Automated application tests', f"{passed} passed"),
+        ('C360 contract and availability', f'{contract["passed"]} checks, {contract["rows"]:,} rows'),
+        ('Stored / live feature values', f'{parity["sample_size"]:,} customers, {parity["mismatch_count"]} mismatches'),
+        ('Full-table customer key coverage', f'{parity["stored_rows"]:,} rows checked'),
+        ('Voice integrity and C360 linkage', '2,000 verified / 1,944 linked'),
     ]
     for i, (label, value) in enumerate(rows):
-        top = 364 - i * 49
-        text(52, top, 430, escape(label), 18, maximum=45)
-        text(530, top, 378, escape(value), 18, TEAL, maximum=45)
+        top = 369 - i * 38
+        text(52, top, 430, escape(label), 17, maximum=26)
+        text(530, top, 378, escape(value), 17, TEAL, maximum=26)
     extra = len(benchmark) - len(released)
     extra_text = f'{extra} extra question rows included.' if extra else 'The 15 extra questions are pending the 19:00 release.'
-    text(52, 96, 856, escape(extra_text) + '<br/>Limits: ASR requires review; live provider, eligibility and capacity remain unverified.',
-         17, RED, maximum=58)
+    text(52, 83, 856, escape(extra_text) + ' Feature values are sampled, while key coverage uses the full store.<br/>Limits: ASR, live provider, eligibility and production capacity need broader validation.',
+         14, RED, maximum=46)
     c.showPage()
 
     # 9. Implementation path and accurate AI disclosure.

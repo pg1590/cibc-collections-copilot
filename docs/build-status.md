@@ -15,6 +15,7 @@ The four-layer local application and priority correctness fixes are implemented.
 - Offline/live feature parity remains 100 customers, zero mismatches. The classifier is unchanged: heldout precision 89.29%, recall 65.79%, F1 75.76% on 126 customer-grouped notes; 374 training notes. These are small synthetic-data results, not production or business-uplift evidence.
 - The counted quality report and proposed C360 contract are present. The pipeline has 1,014,631 conservative canonical customer records; identity precision remains unmeasured.
 - Architecture PDF/PNG and nine-slide presentation are refreshed and visually inspected. A 4:40 recording walkthrough and clean-commit ZIP builder are available.
+- The final presentation and exact recording script use HAC-4447: one open card case, CAD 314.53 overdue, 136 DPD, recorded consumer proposal and insolvency hold, and a cached 53-second recording. The supervisor edit and persistent audit flow was rehearsed through the running API. The printable script includes timed actions, spoken narration, copy-ready inputs and expected outputs; a rendered browser recording remains the owner's step.
 
 Actual Claude Opus 5.5 high-effort reviews and extractive implementation were integrated and independently checked by Codex. See [the correctness release](reviews/correctness-gemini-release.md) for decisions, evidence, exclusions and remaining gaps.
 

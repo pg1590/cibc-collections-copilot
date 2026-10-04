@@ -289,6 +289,8 @@ The nine-slide presentation is generated directly as PDF from the measured local
 .venv/bin/python scripts/generate_pitch_pdf.py
 ```
 
+The final deck also reads the C360 and independent parity reports. Generate them with `scripts/check_c360_contract.py` and `scripts/check_feature_parity.py --sample-size 1000 --output data/feature-parity.json` first. Its customer example is HAC-4447 and is checked against the local database. The [exact video script](docs/demo-walkthrough.md) includes its verified values, click sequence and copy-ready review text. Run `.venv/bin/python scripts/generate_demo_script_pdf.py` for the printable recording aid at `../deliverables/AddaWale-Video-Script.pdf`.
+
 Output: `../deliverables/AddaWale-Presentation.pdf`. Regenerate and review it after the final benchmark run so its counts are current. The deck and existing architecture use conventional text, shapes and charts; no image-generation tool is used.
 
 For frontend checks, from the repository root:
