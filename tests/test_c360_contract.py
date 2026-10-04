@@ -115,7 +115,8 @@ def test_every_top_level_contract_item_is_either_checked_or_listed():
     import yaml
     contract = yaml.safe_load(checker.CONTRACT.read_text())
     listed = {u['item'] for u in checker.unchecked_items(contract)}
-    assert set(contract) <= checker.CHECKED_SECTIONS | listed
+    assert set(contract) - checker.CHECKED_SECTIONS <= set(checker.UNCHECKED_SECTIONS)
+    assert set(contract) - checker.CHECKED_SECTIONS <= listed
     assert all(spec['type'] in checker.COMPATIBLE for spec in contract['columns'].values())
 
 
@@ -126,3 +127,79 @@ def test_cli_exit_codes_and_outputs(tmp_path):
     bad = build(tmp_path / 'bad.duckdb', 'UPDATE gold.customer_summary SET open_cases=-1')
     assert checker.main(['--db', str(bad), *outputs]) == 1
     assert checker.main(['--db', str(tmp_path / 'absent.duckdb'), *outputs]) == 2
+
+
+@pytest.mark.parametrize('replacement', [
+    {'primary_key': 'missing'}, {'primary_key': ['customer_id']},
+    {'columns': []}, {'columns': {}}, {'product': 'missing_schema'},
+    {'columns': {'customer_id': None}},
+    {'columns': {'customer_id': {'type': []}}},
+    {'columns': {'customer_id': {'type': 'string', 'unique': 'false'}}},
+    {'columns': {'customer_id': {'type': 'number', 'minimum': float('nan')}}},
+])
+def test_malformed_contract_cannot_pass_or_crash_the_cli(tmp_path, replacement):
+    import yaml
+    contract = yaml.safe_load(checker.CONTRACT.read_text())
+    contract.update(replacement)
+    path = tmp_path / 'bad.yaml'
+    path.write_text(yaml.safe_dump(contract))
+    db = build(tmp_path / 'data.duckdb')
+    with pytest.raises(ValueError):
+        checker.check(db, path)
+    assert checker.main(['--db', str(db), '--contract', str(path),
+                         '--report', str(tmp_path / 'out.md'), '--json', str(tmp_path / 'out.json')]) == 2
+    assert not (tmp_path / 'out.md').exists()
+
+
+@pytest.mark.parametrize('text', ['', '[]', 'null'])
+def test_non_mapping_contract_has_a_controlled_cli_error(tmp_path, text):
+    path = tmp_path / 'bad.yaml'
+    path.write_text(text)
+    assert checker.main(['--db', str(build(tmp_path / 'data.duckdb')), '--contract', str(path)]) == 2
+
+
+@pytest.mark.parametrize('alias', ['direct', 'symlink', 'hardlink'])
+def test_cli_outputs_cannot_overwrite_inputs_or_aliases(tmp_path, alias):
+    import os
+    db = build(tmp_path / 'data.duckdb')
+    contract = tmp_path / 'contract.yaml'
+    contract.write_text(checker.CONTRACT.read_text())
+    for source in (db, contract):
+        before = digest(source)
+        output = source
+        if alias != 'direct':
+            output = tmp_path / ('alias-' + source.name)
+            if alias == 'symlink':
+                output.symlink_to(source)
+            else:
+                os.link(source, output)
+        for flag, other in [('--report', '--json'), ('--json', '--report')]:
+            assert checker.main(['--db', str(db), '--contract', str(contract), flag, str(output),
+                                 other, str(tmp_path / 'safe-output')]) == 2
+        assert digest(source) == before
+
+
+def test_cli_requires_distinct_outputs_and_handles_write_errors(tmp_path):
+    db = build(tmp_path / 'data.duckdb')
+    same = tmp_path / 'same.md'
+    assert checker.main(['--db', str(db), '--report', str(same), '--json', str(same)]) == 2
+    assert not same.exists()
+    assert checker.main(['--db', str(db), '--report', str(tmp_path),
+                         '--json', str(tmp_path / 'out.json')]) == 2
+
+
+def test_empty_snapshot_fails_product_availability(tmp_path):
+    result = checker.check(build(tmp_path / 'empty.duckdb', 'DELETE FROM gold.customer_summary'))
+    assert failures(result) == {('non_empty', None): '0 rows'}
+
+
+def test_report_does_not_claim_success_if_database_changed(tmp_path):
+    db = build(tmp_path / 'data.duckdb')
+    result = checker.check(db)
+    result['database_unchanged'] = False
+    report = tmp_path / 'report.md'
+    checker.write_report(result, report, db, checker.CONTRACT)
+    text = report.read_text()
+    assert 'All checks passed.' not in text
+    assert 'Database changed during validation' in text
+    assert 'Contract snapshot date:' in text

@@ -250,7 +250,10 @@ From the repository root, run the automated tests and numeric development-answer
 ```bash
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q --junitxml=data/test-results.xml
 .venv/bin/python scripts/validate_dev.py
+.venv/bin/python scripts/check_c360_contract.py
 ```
+
+The C360 checker opens the database read-only and verifies product availability, declared columns and types, primary-key uniqueness, required values and minimums against `config/c360-contract.yaml`. The measured report is [C360 contract validation](docs/c360-contract-validation.md); it also lists contract items this checker does not verify. Exit codes are 0 for passed checks, 1 for failed checks and 2 when the check cannot run.
 
 With the backend running and default demo passwords, run the HTTP integration check:
 
@@ -296,7 +299,8 @@ npm run build
 
 Current local verification:
 
-- **256 automated tests passed**, covering roles, hardship/hold priority, metric dates/cohorts/groupings/province filters, provider fallback/privacy, audio integrity/access/cache/queue controls and persistent reviews/audit.
+- **288 automated tests passed**, covering roles, hardship/hold priority, metric dates/cohorts/groupings/province filters, C360 contract validation, provider fallback/privacy, audio integrity/access/cache/queue controls and persistent reviews/audit.
+- **23 C360 contract/product availability checks passed** on 1,014,631 rows without changing the database. Freshness, identity precision and governance approval are outside this check.
 - **50 benchmark rows generated** (35 original plus 15 extra), including nine refusals and no unresolved results.
 - **12/12 numeric development questions matched** organizer reference SQL within tolerance.
 - **100 customers checked** for offline/live feature consistency, with zero mismatches.
