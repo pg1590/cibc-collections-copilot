@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown, Code2, Loader2, OctagonX, Send } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { RecordTable } from "@/components/record-table";
+import { RichText } from "@/components/rich-text";
 import { RoleGate } from "@/components/role-gate";
 import { SourceList } from "@/components/source-list";
 import { ErrorState } from "@/components/states";
@@ -21,6 +22,14 @@ import { displayValue, formatCount } from "@/lib/utils";
 interface Exchange {
   question: string;
   result: AskResponse;
+}
+
+/** Each "Label: quote [source]" item starts a block, so a quoted heading stays a heading. */
+function evidenceMarkdown(text: string) {
+  return text.replace(
+    /(^|\]\n)(Evidence|Policy): (#{1,6}\s)?/g,
+    (_, lead: string, label: string, heading?: string) => `${lead ? "]\n\n" : ""}**${label}:**${heading ? `\n${heading}` : " "}`,
+  );
 }
 
 function AnswerCard({ question, result }: Exchange) {
@@ -58,13 +67,13 @@ function AnswerCard({ question, result }: Exchange) {
             </AlertDescription>
           </Alert>
         ) : (
-          <p className="text-[1.05rem] leading-relaxed whitespace-pre-line">{result.answer}</p>
+          <RichText text={result.answer} className="text-[1.05rem] leading-relaxed" />
         )}
 
         {!result.refused && result.explanation && (
           <section aria-label="Evidence explanation" className="bg-muted/40 rounded-lg border p-4">
             <h3 className="mb-2 text-sm font-medium">Evidence explanation</h3>
-            <p className="text-sm leading-relaxed whitespace-pre-line">{result.explanation}</p>
+            <RichText text={evidenceMarkdown(result.explanation)} className="text-sm leading-relaxed" />
           </section>
         )}
 
