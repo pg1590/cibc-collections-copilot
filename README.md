@@ -254,7 +254,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q --junitxml=data/t
 .venv/bin/python scripts/check_feature_parity.py --sample-size 1000 --output data/feature-parity.json
 ```
 
-The C360 checker opens the database read-only and verifies product availability, declared columns and types, primary-key uniqueness, required values and minimums against `config/c360-contract.yaml`. The measured report is [C360 contract validation](docs/c360-contract-validation.md); it also lists contract items this checker does not verify. Exit codes are 0 for passed checks, 1 for failed checks and 2 when the check cannot run.
+Aryan's [C360 contract checker](scripts/check_c360_contract.py) opens the database read-only and verifies product availability, declared columns and types, primary-key uniqueness, required values and minimums against `config/c360-contract.yaml`. The measured report is [C360 contract validation](docs/c360-contract-validation.md); it also lists contract items this checker does not verify. Exit codes are 0 for passed checks, 1 for failed checks and 2 when the check cannot run.
 
 Ved's [feature parity checker](docs/feature-parity-validation.md) compares a reproducible sample of stored features with the same definition used for live briefs. It checks key coverage across the full table and detects sampled value, schema/type and version-report drift without changing the database or trained model.
 
