@@ -31,10 +31,15 @@ CHANNEL = "coalesce(h.channel_v2,h.channel)"
 RESOLVED = "('kept','partially_kept','broken')"
 
 
-def _entry(description, groupings, time_basis, denominator, **extra):
+PROVINCES = frozenset("AB BC MB NB NL NS NT NU ON PE QC SK YT".split())
+PROVINCE_FILTER = 'Optional single filter {"province": "<two-letter code>"} on the collections case province; records without a linked case are excluded.'
+NO_FILTER = "No custom filters supported."
+
+
+def _entry(description, groupings, time_basis, denominator, filters=PROVINCE_FILTER, **extra):
     return dict(description=description, groupings=groupings,
                 time_basis=time_basis, denominator=denominator,
-                filters="No custom filters supported.", **extra)
+                filters=filters, **extra)
 
 
 CATALOG = {
@@ -48,8 +53,8 @@ CATALOG = {
     "cure_rate": _entry("Cases open at period start that cure during the period.", ["none", "product", "province", "queue"], "calendar period", "cases open at start, excluding insolvency/deceased holds"),
     "average_dpd": _entry("Mean recorded DPD among currently open cases.", ["none", "queue", "bucket", "product"], "snapshot", "open cases with nonmissing current DPD", snapshot_only=True),
     "contact_attempts_per_case": _entry("Period outbound attempts / distinct cases receiving those attempts.", ["none", "bucket", "queue", "product"], "contact date", "distinct case IDs with outbound contacts in period"),
-    "delinquency_rate": _entry("Card accounts 1+ DPD / active or blocked cards with known DPD.", ["none", "product", "bucket"], "snapshot", "active/blocked card accounts with nonmissing DPD", snapshot_only=True, scope="cards only; lending has no authoritative active-status field"),
-    "write_off_rate": _entry("Accounts charged off in period / accounts in the extract register.", ["none", "product"], "charge-off date", "all extracted card and loan account records; not period-start balances"),
+    "delinquency_rate": _entry("Card accounts 1+ DPD / active or blocked cards with known DPD.", ["none", "product", "bucket"], "snapshot", "active/blocked card accounts with nonmissing DPD", filters=NO_FILTER, snapshot_only=True, scope="cards only; lending has no authoritative active-status field"),
+    "write_off_rate": _entry("Accounts charged off in period / accounts in the extract register.", ["none", "product"], "charge-off date", "all extracted card and loan account records; not period-start balances", filters=NO_FILTER),
     "open_cases": _entry("Currently open cases (no recorded outcome).", ["none", "queue", "bucket", "product"], "snapshot", "source-wide collections cases", snapshot_only=True, extension=True),
 }
 
@@ -73,8 +78,12 @@ def _iso(value, name):
 def _validate(spec):
     if not isinstance(spec, dict) or set(spec) - _ALLOWED:
         raise PlanError("The metric plan contains unsupported fields.")
-    if not isinstance(spec.get("filters", {}), dict) or spec.get("filters", {}) != {}:
-        raise PlanError("Custom filters are unsupported; please clarify the required cohort.")
+    filters = spec.get("filters", {})
+    if not isinstance(filters, dict) or set(filters) - {"province"}:
+        raise PlanError("Only a single province filter is supported; please clarify the required cohort.")
+    province = filters.get("province")
+    if province is not None and province not in PROVINCES:
+        raise PlanError("The province filter must be a two-letter Canadian province or territory code.")
     if type(spec.get("refuse", False)) is not bool:
         raise PlanError("refuse must be a boolean.")
     for key in ("clarification", "refuse_reason"):
@@ -105,7 +114,9 @@ def _validate(spec):
         raise PlanError("The requested period begins before supported extract coverage (2016-10-03).")
     if metric == "cure_rate" and (start.day != 1 or (end.day != 1 and end != ASOF + timedelta(days=1))):
         raise PlanError("Cure rate uses calendar-month cohorts; specify whole months or the current month to the snapshot.")
-    return metric, grouping, start, end
+    if province and CATALOG[metric]["filters"] == NO_FILTER:
+        raise PlanError(f"{metric} has no reviewed province source; request it without a province filter or by a supported grouping.")
+    return metric, grouping, start, end, province
 
 
 def _select(group, metric_expr, counts, table, where):
@@ -116,21 +127,25 @@ def _select(group, metric_expr, counts, table, where):
 
 
 def compile_plan(spec: dict) -> CompiledPlan:
-    metric, grouping, start, end = _validate(spec)
+    metric, grouping, start, end, province = _validate(spec)
     params = [start, end]
+    # Province is a whitelisted code bound as a parameter, matched on the linked case.
+    region = " AND c.province_code=?" if province else ""
     note = "Dates use an inclusive start and exclusive end. Source-wide curated records are used."
     case_groups = {"none": None, "queue": ("coalesce(c.queue,'unknown')", "queue"), "bucket": ("coalesce(c.current_bucket,'unknown')", "current_bucket"), "product": ("coalesce(c.primary_product,'unknown')", "primary_product"), "province": ("coalesce(c.province_code,'unknown')", "province_code")}
     if metric in ("promise_kept_rate", "broken_promise_rate"):
         groups = {"none": None, "queue": ("coalesce(c.queue,'unknown')", "queue"), "product": ("coalesce(p.product,'unknown')", "product"), "site": ("CASE WHEN p.agent_id IS NULL THEN 'self_serve' ELSE coalesce(a.site,'unknown') END", "site"), "prior_broken": ("least(p.prior_broken_ptp_count,3)", "prior_broken")}
         joins = " LEFT JOIN curated.collections_cases c USING(case_id)" if grouping == "queue" else " LEFT JOIN curated.agents a USING(agent_id)" if grouping == "site" else ""
+        if province and grouping != "queue": joins += " LEFT JOIN curated.collections_cases c ON c.case_id=p.case_id"
         status = "kept" if metric == "promise_kept_rate" else "broken"
         alias = "promise_kept_rate_pct" if status == "kept" else "broken_rate_pct"
-        sql = _select(groups[grouping], f"round(100.0*sum(CASE WHEN p.ptp_status='{status}' THEN 1 ELSE 0 END)/nullif(count(*),0),1) {alias}", "count(*) resolved_promises", "curated.promises_to_pay p" + joins, f"p.ptp_due_date>=? AND p.ptp_due_date<? AND p.ptp_status IN {RESOLVED}")
+        sql = _select(groups[grouping], f"round(100.0*sum(CASE WHEN p.ptp_status='{status}' THEN 1 ELSE 0 END)/nullif(count(*),0),1) {alias}", "count(*) resolved_promises", "curated.promises_to_pay p" + joins, f"p.ptp_due_date>=? AND p.ptp_due_date<? AND p.ptp_status IN {RESOLVED}" + region)
         note += " Open/cancelled promises are excluded; unknown groups retain unlinked source records. Queue/site reflect the extract's reference values."
         if grouping == "prior_broken": note += " prior_broken=3 denotes three or more; null remains unknown."
     elif metric in ("rpc_rate", "ptp_rate", "cost_per_contact", "cost_per_rpc"):
         groups = {"none": None, "hour": ("h.contact_hour_local", "contact_hour_local"), "channel": (CHANNEL, "channel"), "agent_site": ("CASE WHEN h.agent_id IS NULL THEN 'self_serve' ELSE coalesce(a.site,'unknown') END", "agent_site")}
         joins = " LEFT JOIN curated.agents a USING(agent_id)" if grouping == "agent_site" else ""
+        if province: joins += " LEFT JOIN curated.collections_cases c ON c.case_id=h.case_id"
         where = f"{CHANNEL}!='system' AND h.contact_ts_local>=? AND h.contact_ts_local<?"
         if metric == "rpc_rate":
             where += f" AND {CHANNEL}='call' AND h.direction='outbound'"
@@ -142,7 +157,7 @@ def compile_plan(spec: dict) -> CompiledPlan:
             expr, count = "round(sum(h.contact_cost_cad)/nullif(count(h.contact_id),0),2) cost_per_contact_cad", "count(h.contact_id) contacts"
         else:
             expr, count = "round(sum(h.contact_cost_cad)/nullif(sum(CASE WHEN h.rpc_flag THEN 1 ELSE 0 END),0),2) cost_per_rpc_cad", "sum(CASE WHEN h.rpc_flag THEN 1 ELSE 0 END) right_party_contacts"
-        sql = _select(groups[grouping], expr, count, "curated.contact_history h" + joins, where)
+        sql = _select(groups[grouping], expr, count, "curated.contact_history h" + joins, where + region)
         note += " Contact periods use recorded local timestamps; channel_v2 takes precedence over legacy channel."
     elif metric in ("hardship_rate", "cure_rate", "average_dpd", "open_cases"):
         if metric == "hardship_rate":
@@ -162,10 +177,10 @@ def compile_plan(spec: dict) -> CompiledPlan:
             expr, count, where = "count(*) open_cases", None, "c.outcome IS NULL"
             params = []
             note = f"Open means no recorded outcome at {SNAPSHOT}. Source bucket labels are retained; discrepancies are reported in data quality."
-        sql = _select(case_groups[grouping], expr, count, "curated.collections_cases c", where)
+        sql = _select(case_groups[grouping], expr, count, "curated.collections_cases c", where + region)
     elif metric == "contact_attempts_per_case":
-        joins = " LEFT JOIN curated.collections_cases c USING(case_id)" if grouping != "none" else ""
-        sql = _select(case_groups[grouping], "round(count(*)*1.0/nullif(count(DISTINCT h.case_id),0),2) attempts_per_case", "count(DISTINCT h.case_id) contacted_cases, count(*) outbound_attempts", "curated.contact_history h" + joins, "h.direction='outbound' AND h.contact_ts_local>=? AND h.contact_ts_local<? AND h.case_id IS NOT NULL")
+        joins = " LEFT JOIN curated.collections_cases c USING(case_id)" if grouping != "none" else " LEFT JOIN curated.collections_cases c ON c.case_id=h.case_id" if province else ""
+        sql = _select(case_groups[grouping], "round(count(*)*1.0/nullif(count(DISTINCT h.case_id),0),2) attempts_per_case", "count(DISTINCT h.case_id) contacted_cases, count(*) outbound_attempts", "curated.contact_history h" + joins, "h.direction='outbound' AND h.contact_ts_local>=? AND h.contact_ts_local<? AND h.case_id IS NOT NULL" + region)
         note += " The denominator contains cases with outbound records in this period, including recorded outbound system events, as the certified metric specifies outbound only. This is not the separate all-open-case lifetime-attempts measure."
     elif metric == "delinquency_rate":
         groups = {"none": None, "product": ("a.product_code", "product_code"), "bucket": ("a.dpd_bucket", "dpd_bucket")}
@@ -179,4 +194,9 @@ def compile_plan(spec: dict) -> CompiledPlan:
         note += " Denominator is the full extracted account register, including closed accounts; not a historical period-start account inventory or annualized rate."
     else:  # Catalog additions require an explicit reviewed compiler branch.
         raise PlanError("This catalog metric has no reviewed SQL compiler.")
-    return CompiledPlan(sql, params, note, {"metric_id": metric, "grouping": grouping, "start_date": start.isoformat(), "end_date": end.isoformat(), "definition_source": "data/metric_definitions.csv", "denominator": CATALOG[metric]["denominator"]})
+    metadata = {"metric_id": metric, "grouping": grouping, "start_date": start.isoformat(), "end_date": end.isoformat(), "definition_source": "data/metric_definitions.csv", "denominator": CATALOG[metric]["denominator"]}
+    if province:
+        params = [*params, province]
+        metadata["filters"] = {"province": province}
+        note += f" Filtered to province {province} using the collections case province_code; records without a linked case are excluded."
+    return CompiledPlan(sql, params, note, metadata)

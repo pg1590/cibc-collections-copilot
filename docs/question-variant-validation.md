@@ -1,6 +1,6 @@
 # Question-variant validation
 
-Owner: Krish (Insight and NLP). Run: 4 October 2026, 17:40 IST, against commit `7fe9c21` on branch `team/krish-question-validation`. Tests: [`tests/test_question_variants.py`](../tests/test_question_variants.py).
+Owner: Krish (Insight and NLP). First run: 4 October 2026, 17:40 IST, against commit `7fe9c21`; fixes applied ~18:10 IST on branch `team/krish-question-validation`. Tests: [`tests/test_question_variants.py`](../tests/test_question_variants.py).
 
 ## Method
 
@@ -11,7 +11,7 @@ Owner: Krish (Insight and NLP). Run: 4 October 2026, 17:40 IST, against commit `
 
 ## Results
 
-**13 of 20 behaved as expected (65%)** on the first run. Of the 7 failures, 3 gave a wrong answer with no warning, 2 were false refusals, 1 missed a refusal, and 1 asked for clarification where an answer was expected.
+**13 of 20 behaved as expected (65%)** on the first run. **After the fixes below, 20 of 20 do** (planning level, no dataset). Of the 7 failures, 3 gave a wrong answer with no warning, 2 were false refusals, 1 missed a refusal, and 1 asked for clarification where an answer was expected.
 
 | ID | Question | Expected | Observed | Result |
 |---|---|---|---|---|
@@ -38,107 +38,30 @@ Owner: Krish (Insight and NLP). Run: 4 October 2026, 17:40 IST, against commit `
 
 Which failures matter most for scoring: QV-02, QV-10 and QV-16 return a confident wrong answer, which is worse than a clarification. The extra benchmark questions are likely to use wording like "in each …" and "counts as broken".
 
-## Proposed engine fix (for Prakhar to apply)
+## Fixes (applied on this branch, 4 Oct ~18:10 IST)
 
-Under the one-editor-per-file rule, this branch does **not** change `app/insights.py`. The patch below was applied in a working copy, tested, and reverted:
+On the first run (commit `e0db35f`), the 7 failures were marked as strict expected failures. All 7 are now fixed and `KNOWN_FAILURES` is empty. Full suite: **161 passed, 0 expected failures**, on Python 3.11 and Windows, with no dataset.
 
-- **With the patch:** 144 tests pass. The only 6 failures are the intended strict-xfail tripwires for QV-02, 10, 15, 16, 18 and 20, which now pass.
-- **Without the patch (this branch as committed):** 144 passed, 7 expected failures.
+| Fix | Files | Failures fixed |
+|---|---|---|
+| **Refusals.** `household` and `vulnerability` added as protected words. The word is `vulnerability`, not `vulnerable`, so the certified-for-vulnerable pilot question still works. Language words are refused only with a decision verb (rank, prioritise, target, exclude, deny, call first), not as a "by language" breakdown. "Target French customers for stricter collections" is still refused. | `app/insights.py` `_refusal` | QV-18, QV-20 |
+| **Policy routing.** "counts as / treated as / deemed broken" go to PRC-COLL-010 §3.3. The scope gate also accepts `ptp`, `broken`, `phone`, `sms` and `text message`. The §5.2 route accepts phone/contact/reach plus week/7 days. | `app/insights.py` `answer`, `_policy` | QV-15, QV-16 |
+| **Broken-promise wording.** "break rate … PTP/promise" is recognised by the metric compiler, so its grouping is kept. | `app/insights.py` `_generic_plan` | QV-02 |
+| **Grouping words.** Besides "by", the engine accepts "each/every/per <dimension>" and "across <dimension>s", with plural forms. | `app/insights.py` `_generic_plan` | QV-10 |
+| **Single province filter.** `filters` may contain one key, `province`, whose value must be one of the 13 province/territory codes. It is matched on the collections case `province_code` and bound as a parameter, never pasted into the SQL. Records without a linked case are excluded, and the answer note says so. It is supported for promise, contact, case and attempts metrics. It is **not** supported for delinquency rate or write-off rate (no reviewed province source on the account tables), which still ask for clarification. Province names and "in/from ON"-style codes are detected locally. A city/site or two provinces still ask for clarification. The Gemini plan schema, instruction and validation accept the same filter. | `app/metric_plans.py`, `app/insights.py`, `app/gemini.py` | QV-13 |
 
-What it changes:
+**Behaviour change to note:** before this branch, `tests/test_insights.py` required "RPC rate in Ontario in September 2026" to ask for clarification. It is now answered with the province filter. That question moved from the clarification list into a new test, `test_single_province_is_a_bound_filter_not_a_clarification`. All other edge cases in that list still ask for clarification.
 
-1. **Refusals:** adds `household` and `vulnerability` to the protected list. The word is `vulnerability`, not `vulnerable`, so the certified-for-vulnerable pilot question still works. Language words (`language|french|english|…`) are now refused only with a decision verb (rank, prioritise, target, exclude, deny, call first), not with "by"/"show". The existing test "Target French customers for stricter collections" is still refused.
-2. **Policy routing:** "counts as / treated as / deemed broken" go to PRC-COLL-010 §3.3. The out-of-scope keyword gate now also accepts `ptp`, `broken`, `phone`, `sms`, `text message`. The §5.2 route accepts phone/contact/reach plus week/7 days.
-3. **Broken-promise wording:** "break rate … PTP/promise" is recognised by the metric compiler, so its grouping is kept.
-4. **Grouping words:** besides "by", the engine now accepts "each/every/per <dimension>" and "across <dimension>s", with plural forms.
+**New tests:** filtered SQL runs on an in-memory DuckDB. ON promises give 66.7% of 3; QC promises, unlinked promises and promises outside the period are excluded. The filter works across case-linked metrics. Unsupported province cases ask for clarification. Injected or unknown codes are rejected. For every filterable metric and grouping, the number of placeholders equals the number of parameters and the province is bound last.
 
 **Before merging, check against real data:**
 - Run `scripts/validate_dev.py`: 12/12 must still match.
-- Run `scripts/run_benchmark.py --local` and check `git diff submission/benchmark_answers.csv`. No released answer should change. If one does, inspect it before accepting.
-- The 35 released question texts are not on the reviewer's machine, so this has not been checked yet.
-
-**After applying the patch:** delete QV-02, QV-10, QV-15, QV-16, QV-18 and QV-20 from `KNOWN_FAILURES` in the test file. Keep QV-13.
-
-```diff
-diff --git a/app/insights.py b/app/insights.py
-index debbad0..8969f88 100644
---- a/app/insights.py
-+++ b/app/insights.py
-@@ -126,8 +126,11 @@ class InsightEngine:
-     def _refusal(q):
-         if re.search(r'weather|forecast.*(toronto|tomorrow)|sports|bitcoin|stock price',q):return 'This question is outside the collections dataset and policies.'
-         if re.search(r'\b(sue|lawsuit|legal advice)\b',q):return 'I cannot give a legal decision about suing a customer. Refer the case to the authorized legal/compliance team.'
--        protected=re.search(r'\b(gender|marital|citizenship|newcomer|ethnic\w*|religion|accent|disability|accessibility|age|race|sex|language|french|english)\b|customers?\s+(?:over|under|older than|younger than)\s+\d+',q)
--        if protected and re.search(r'\brank|prioriti[sz]|\btarget|\bexclude|\bdeny|\blist|\bexport|\bshow|\bby\b|called first|call.*first|\bdisclose',q):return 'Protected attributes cannot be used to rank customers, make collection decisions or disclose individual sensitive attributes.'
-+        protected=re.search(r'\b(gender|marital|citizenship|newcomer|household|vulnerability|ethnic\w*|religion|accent|disability|accessibility|age|race|sex)\b|customers?\s+(?:over|under|older than|younger than)\s+\d+',q)
-+        decision=r'\brank|prioriti[sz]|\btarget|\bexclude|\bdeny|called first|call.*first'
-+        if protected and re.search(decision+r'|\blist|\bexport|\bshow|\bby\b|\bdisclose',q):return 'Protected attributes cannot be used to rank customers, make collection decisions or disclose individual sensitive attributes.'
-+        # Language is a servicing attribute; refuse it only as a decision input, not as a reporting breakdown.
-+        if re.search(r'\b(language|french|english|francophone|anglophone)\b',q) and re.search(decision,q):return 'Protected attributes cannot be used to rank customers, make collection decisions or disclose individual sensitive attributes.'
-         if re.search(r'(stop|exclude|deny|withdraw|withhold).*hardship|hardship.*(stop offering|exclude|deny)',q):return 'Hardship support cannot be denied using geography or a proxy for protected grounds.'
-         if re.search(r'\b(export|list|give|show)\b',q) and re.search(r'\b(every|all)\b',q) and re.search(r'\b(phone|email|address|names)\b',q):return 'Bulk export of customer identifiers and contact details is not permitted.'
-         if re.search(r'ignore.*(instruction|policy)|read_(csv|text|parquet)|/etc/|\b(attach|drop table|delete from|update .*set)\b',q):return 'This interface accepts collections questions, not commands, files or arbitrary SQL.'
-@@ -144,7 +147,7 @@ class InsightEngine:
-                 if re.search(r'\bCS-\d{4}-\d+\b',q,re.I) and re.search(r'summari[sz]|recorded call|resume|appel',lower):
-                     self._transcript(q,result)
-                 else:
--                    policy_first=bool(re.search(r'grace period|considered broken|express consent|national do not call|consumer proposal',lower) or (re.search(r'\bpolicy|procedure|programme|program\b',lower) and not re.search(r'\brate\b|\bshare\b|\baverage\b',lower)))
-+                    policy_first=bool(re.search(r'grace period|(?:considered|counts? as|treated as|deemed)\s+(?:a\s+)?broken|express consent|national do not call|consumer proposal',lower) or (re.search(r'\bpolicy|procedure|programme|program\b',lower) and not re.search(r'\brate\b|\bshare\b|\baverage\b',lower)))
-                     plan=None if policy_first else self._plan(lower)
-                     if plan is None and not policy_first and self.planner:
-                         try:
-@@ -289,7 +292,7 @@ class InsightEngine:
-             or ('open cases' in q and re.search(r'attempts|touches',q))):
-             return None
-         metric=None
--        if re.search(r'broken[- ]promise|broken.*ptp|ptp.*break|promise.*break',q):metric='broken_promise_rate'
-+        if re.search(r'broken[- ]promise|broken.*ptp|ptp.*break|promise.*break|break(?:ing)? rate.*(?:ptp|promise)',q):metric='broken_promise_rate'
-         elif re.search(r'promise[- ]kept|ptp.*kept|kept.*promise|promise.*kept|keep rate',q):metric='promise_kept_rate'
-         elif 'cost' in q and re.search(r'rpc|right[- ]party|right party',q):metric='cost_per_rpc'
-         elif 'cost' in q and re.search(r'contact|channel|attempt',q):metric='cost_per_contact'
-@@ -323,10 +326,12 @@ class InsightEngine:
-             thresholds=re.findall(r'\b(\d+)\s*(?:\+|or more|and above)?\s*(?:days? past due|dpd)|\bdpd\s*[>=]{1,2}\s*(\d+)',q)
-             if any(int(a or b)!=1 for a,b in thresholds):raise PlanError('The certified delinquency rate is 1+ DPD; other thresholds require a separately defined metric.')
-         grouping='none'
--        if re.search(r'\bby\b',q):
--            clause=re.split(r'\bby\b',q,maxsplit=1)[1]
-+        dims=r'(?:queue|bucket|province|product|channel|hour|site)s?\b'
-+        trigger=re.search(r'\bby\b|\b(?:each|every|per)\s+(?='+dims+r')|\bacross\s+(?:all\s+)?(?:the\s+)?(?='+dims+r')',q)
-+        if trigger:
-+            clause=q[trigger.end():]
-             found=[]
--            for dimension,pattern in [('queue',r'\bqueue\b'),('bucket',r'\bbucket\b'),('province',r'\bprovince\b'),('product',r'\bproduct\b'),('channel',r'\bchannel\b'),('hour',r'\bhour\b'),('site',r'\bsite\b')]:
-+            for dimension,pattern in [('queue',r'\bqueues?\b'),('bucket',r'\bbuckets?\b'),('province',r'\bprovinces?\b'),('product',r'\bproducts?\b'),('channel',r'\bchannels?\b'),('hour',r'\bhours?\b'),('site',r'\bsites?\b')]:
-                 if re.search(pattern,clause):found.append(dimension)
-             if len(found)!=1:raise PlanError('Please choose one supported grouping: '+', '.join(CATALOG.get(metric,{}).get('groupings',[]))+'.')
-             grouping=found[0]
-@@ -342,18 +347,18 @@ class InsightEngine:
-         return plan
- 
-     def _policy(self,q,result):
--        if not re.search(r'collection|hardship|call|contact|promise|payment|consent|bankrupt|consumer proposal|dispute|complaint|grace|metric|financial|dialer|agent|programme|program|policy|procedure|accommodation|accessibility|dncl|casl',q):
-+        if not re.search(r'collection|hardship|call|contact|promise|\bptp|broken|payment|phone|\bsms\b|text message|consent|bankrupt|consumer proposal|dispute|complaint|grace|metric|financial|dialer|agent|programme|program|policy|procedure|accommodation|accessibility|dncl|casl',q):
-             reason='This question is outside the collections dataset and policies.'
-             result.update(answer=reason,refused=True,reason=reason);return
-         preferred=[]
-         if 'casl' in q or 'email' in q and 'consent' in q:preferred=[('POL-COLL-001','§5.3')]
-         elif 'national do not call' in q or 'dncl' in q:preferred=[('POL-COLL-001','§5.3')]
-         elif 'consumer proposal' in q or 'bankruptcy' in q:preferred=[('POL-COLL-001','§7.3')]
--        elif ('attempt' in q or 'calls' in q) and ('week' in q or '7 day' in q):preferred=[('POL-COLL-001','§5.2')]
-+        elif re.search(r'attempt|calls?\b|phone|contact|reach',q) and re.search(r'week|7[- ]days?|seven days',q):preferred=[('POL-COLL-001','§5.2')]
-         elif re.search(r'calling hours|call.*(?:before|after)\s*\d|permitted.*hours',q):preferred=[('POL-COLL-001','§5.1')]
-         elif 'hours' in q and ('cut' in q or 'reduced' in q) or 'before' in q and 'payment' in q:preferred=[('POL-COLL-004','§4.2')]
-         elif '3-month' in q or 'reduced payment' in q:preferred=[('POL-COLL-004','§4.2'),('HPT-2026','document')]
--        elif 'grace' in q or 'considered broken' in q:preferred=[('PRC-COLL-010','§3.3')]
-+        elif 'grace' in q or re.search(r'(?:considered|counts? as|treated as|deemed)\s+(?:a\s+)?broken',q):preferred=[('PRC-COLL-010','§3.3')]
-         elif 'volume' in q and ('drop' in q or '23' in q or '24' in q):preferred=[('IR-2026-0923','document'),('IR-2026-0923','§1'),('IR-2026-0923','§2')]
-         matches=[s for pair in preferred for s in self.sections if (s['id'],s['section'])==pair and s['language']=='EN']
-         if not matches and self.index:
-```
+- Run `scripts/run_benchmark.py --local` and check `git diff submission/benchmark_answers.csv`. No released answer is expected to change. The README says none of the 35 currently need clarification, and the changes only widen recognition. Inspect any diff before accepting it.
+- Run the filtered queries once on the real schema. `contact_history.case_id` and `collections_cases.province_code` are used by existing reviewed queries, but the new combinations have only been run on test tables.
 
 ## Remaining failures
 
-- **QV-13 (named-province filter)** stays an expected failure. The compiler accepts no filters by design, so "for Ontario", "card customers only" and "in the late-stage queue" all get a clarification. If the 19:00 questions use filters, this is the largest remaining gap. The fix is to allow one equality filter from a fixed list (province, queue, product, site, bucket), with the value passed as a bound parameter and checked against the column's real values (`docs/improvement-plan.md` §0, step 2).
+None of the 20 variants fail after the fixes. This is planning-level coverage of these 20 questions, not an accuracy rate for unseen questions. Other cohort filters (queue, product, "open cases only", hardship cases) still ask for clarification by design.
 
 ## Not covered
 

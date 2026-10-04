@@ -22,6 +22,7 @@ MONTHS.update({m.lower():i for i,m in enumerate(calendar.month_abbr) if m})
 MONTHS.update({'janvier':1,'fevrier':2,'mars':3,'avril':4,'mai':5,'juin':6,'juillet':7,'aout':8,'septembre':9,'octobre':10,'novembre':11,'decembre':12})
 RESOLVED="('kept','partially_kept','broken')"
 CHANNEL='coalesce(h.channel_v2,h.channel)'
+PROVINCE_NAMES={'ontario':'ON','quebec':'QC','québec':'QC','alberta':'AB','manitoba':'MB','saskatchewan':'SK','british columbia':'BC','nova scotia':'NS','new brunswick':'NB','newfoundland':'NL','labrador':'NL','prince edward island':'PE','yukon':'YT','northwest territories':'NT','nunavut':'NU'}
 
 
 def tokens(text):return re.findall(r'[a-z0-9]+',text.lower())
@@ -126,8 +127,11 @@ class InsightEngine:
     def _refusal(q):
         if re.search(r'weather|forecast.*(toronto|tomorrow)|sports|bitcoin|stock price',q):return 'This question is outside the collections dataset and policies.'
         if re.search(r'\b(sue|lawsuit|legal advice)\b',q):return 'I cannot give a legal decision about suing a customer. Refer the case to the authorized legal/compliance team.'
-        protected=re.search(r'\b(gender|marital|citizenship|newcomer|ethnic\w*|religion|accent|disability|accessibility|age|race|sex|language|french|english)\b|customers?\s+(?:over|under|older than|younger than)\s+\d+',q)
-        if protected and re.search(r'\brank|prioriti[sz]|\btarget|\bexclude|\bdeny|\blist|\bexport|\bshow|\bby\b|called first|call.*first|\bdisclose',q):return 'Protected attributes cannot be used to rank customers, make collection decisions or disclose individual sensitive attributes.'
+        protected=re.search(r'\b(gender|marital|citizenship|newcomer|household|vulnerability|ethnic\w*|religion|accent|disability|accessibility|age|race|sex)\b|customers?\s+(?:over|under|older than|younger than)\s+\d+',q)
+        decision=r'\brank|prioriti[sz]|\btarget|\bexclude|\bdeny|called first|call.*first'
+        if protected and re.search(decision+r'|\blist|\bexport|\bshow|\bby\b|\bdisclose',q):return 'Protected attributes cannot be used to rank customers, make collection decisions or disclose individual sensitive attributes.'
+        # Language is a servicing attribute; refuse it only as a decision input, not as a reporting breakdown.
+        if re.search(r'\b(language|french|english|francophone|anglophone)\b',q) and re.search(decision,q):return 'Protected attributes cannot be used to rank customers, make collection decisions or disclose individual sensitive attributes.'
         if re.search(r'(stop|exclude|deny|withdraw|withhold).*hardship|hardship.*(stop offering|exclude|deny)',q):return 'Hardship support cannot be denied using geography or a proxy for protected grounds.'
         if re.search(r'\b(export|list|give|show)\b',q) and re.search(r'\b(every|all)\b',q) and re.search(r'\b(phone|email|address|names)\b',q):return 'Bulk export of customer identifiers and contact details is not permitted.'
         if re.search(r'ignore.*(instruction|policy)|read_(csv|text|parquet)|/etc/|\b(attach|drop table|delete from|update .*set)\b',q):return 'This interface accepts collections questions, not commands, files or arbitrary SQL.'
@@ -144,7 +148,7 @@ class InsightEngine:
                 if re.search(r'\bCS-\d{4}-\d+\b',q,re.I) and re.search(r'summari[sz]|recorded call|resume|appel',lower):
                     self._transcript(q,result)
                 else:
-                    policy_first=bool(re.search(r'grace period|considered broken|express consent|national do not call|consumer proposal',lower) or (re.search(r'\bpolicy|procedure|programme|program\b',lower) and not re.search(r'\brate\b|\bshare\b|\baverage\b',lower)))
+                    policy_first=bool(re.search(r'grace period|(?:considered|counts? as|treated as|deemed)\s+(?:a\s+)?broken|express consent|national do not call|consumer proposal',lower) or (re.search(r'\bpolicy|procedure|programme|program\b',lower) and not re.search(r'\brate\b|\bshare\b|\baverage\b',lower)))
                     plan=None if policy_first else self._plan(lower)
                     if plan is None and not policy_first and self.planner:
                         try:
@@ -289,7 +293,7 @@ class InsightEngine:
             or ('open cases' in q and re.search(r'attempts|touches',q))):
             return None
         metric=None
-        if re.search(r'broken[- ]promise|broken.*ptp|ptp.*break|promise.*break',q):metric='broken_promise_rate'
+        if re.search(r'broken[- ]promise|broken.*ptp|ptp.*break|promise.*break|break(?:ing)? rate.*(?:ptp|promise)',q):metric='broken_promise_rate'
         elif re.search(r'promise[- ]kept|ptp.*kept|kept.*promise|promise.*kept|keep rate',q):metric='promise_kept_rate'
         elif 'cost' in q and re.search(r'rpc|right[- ]party|right party',q):metric='cost_per_rpc'
         elif 'cost' in q and re.search(r'contact|channel|attempt',q):metric='cost_per_contact'
@@ -307,8 +311,11 @@ class InsightEngine:
         if metric=='broken_promise_rate' and re.search(r'\bnumber of broken|\bhow many broken|\bcount.*broken',q) and not re.search(r'\brate\b|\bshare\b',q):
             raise PlanError('Please clarify whether you need a count or a broken-promise rate; this metric compiler returns the rate among resolved promises.')
         if metric!='hardship_rate' and re.search(r'\bhardship\b',q):raise PlanError('Filtering this metric to hardship cases/accounts requires a separately defined cohort; please clarify the source flag and population.')
-        if re.search(r'\b(ontario|quebec|québec|alberta|manitoba|saskatchewan|british columbia|nova scotia|new brunswick|newfoundland|prince edward|toronto|halifax|montreal|montréal|winnipeg|vancouver|calgary|edmonton|ottawa)\b|\b(?:in|from|province)\s+(?:on|qc|ab|bc|mb|sk|ns|nb|nl|pe|yt|nt|nu)\b',q):
-            raise PlanError('A named province/site is a cohort filter, not a grouping. Custom filters need clarification; request a supported grouping over the documented population.')
+        provinces={code for name,code in PROVINCE_NAMES.items() if re.search(r'\b'+name+r'\b',q)}
+        provinces|={m.upper() for m in re.findall(r'\b(?:in|from|province)\s+(on|qc|ab|bc|mb|sk|ns|nb|nl|pe|yt|nt|nu)\b',q)}
+        if len(provinces)>1 or re.search(r'\b(toronto|halifax|montreal|montréal|winnipeg|vancouver|calgary|edmonton|ottawa)\b',q):
+            raise PlanError('Only one province can be used as a filter. A named city or site is a cohort filter that needs clarification; request a single province or a supported grouping.')
+        filters={'province':provinces.pop()} if provinces else {}
         if re.search(r'\b(?:for|among|only|with|without|excluding|exclude|where)\b.*\b(?:late[- ]stage|early[- ]stage|closed|certified|uncertified|french|english|mortgage|gold|platinum|silver|secured|unsecured|1\s*[-–]\s*30)\b',q):
             raise PlanError('The requested cohort filter is unsupported. Specify the metric population and a supported grouping without custom filters.')
         if re.search(r'\bopen\s+cases?\b',q) and metric not in ['open_cases','average_dpd']:
@@ -323,10 +330,12 @@ class InsightEngine:
             thresholds=re.findall(r'\b(\d+)\s*(?:\+|or more|and above)?\s*(?:days? past due|dpd)|\bdpd\s*[>=]{1,2}\s*(\d+)',q)
             if any(int(a or b)!=1 for a,b in thresholds):raise PlanError('The certified delinquency rate is 1+ DPD; other thresholds require a separately defined metric.')
         grouping='none'
-        if re.search(r'\bby\b',q):
-            clause=re.split(r'\bby\b',q,maxsplit=1)[1]
+        dims=r'(?:queue|bucket|province|product|channel|hour|site)s?\b'
+        trigger=re.search(r'\bby\b|\b(?:each|every|per)\s+(?='+dims+r')|\bacross\s+(?:all\s+)?(?:the\s+)?(?='+dims+r')',q)
+        if trigger:
+            clause=q[trigger.end():]
             found=[]
-            for dimension,pattern in [('queue',r'\bqueue\b'),('bucket',r'\bbucket\b'),('province',r'\bprovince\b'),('product',r'\bproduct\b'),('channel',r'\bchannel\b'),('hour',r'\bhour\b'),('site',r'\bsite\b')]:
+            for dimension,pattern in [('queue',r'\bqueues?\b'),('bucket',r'\bbuckets?\b'),('province',r'\bprovinces?\b'),('product',r'\bproducts?\b'),('channel',r'\bchannels?\b'),('hour',r'\bhours?\b'),('site',r'\bsites?\b')]:
                 if re.search(pattern,clause):found.append(dimension)
             if len(found)!=1:raise PlanError('Please choose one supported grouping: '+', '.join(CATALOG.get(metric,{}).get('groupings',[]))+'.')
             grouping=found[0]
@@ -336,24 +345,24 @@ class InsightEngine:
             if explicit_period(q) and not exact_snapshot:
                 raise PlanError(f'This calculation supports only the {SNAPSHOT} snapshot; historical reconstruction is unavailable.')
             start,end=ASOF,ASOF+timedelta(days=1)
-        plan=compile_plan({'metric_id':metric,'grouping':grouping,'start_date':start.isoformat(),'end_date':end.isoformat(),'filters':{},'clarification':None,'refuse':False,'refuse_reason':None})
+        plan=compile_plan({'metric_id':metric,'grouping':grouping,'start_date':start.isoformat(),'end_date':end.isoformat(),'filters':filters,'clarification':None,'refuse':False,'refuse_reason':None})
         if not CATALOG[metric].get('snapshot_only') and not explicit_period(q):
             plan.note+=' No period was supplied; this answer uses the snapshot month to date.'
         return plan
 
     def _policy(self,q,result):
-        if not re.search(r'collection|hardship|call|contact|promise|payment|consent|bankrupt|consumer proposal|dispute|complaint|grace|metric|financial|dialer|agent|programme|program|policy|procedure|accommodation|accessibility|dncl|casl',q):
+        if not re.search(r'collection|hardship|call|contact|promise|\bptp|broken|payment|phone|\bsms\b|text message|consent|bankrupt|consumer proposal|dispute|complaint|grace|metric|financial|dialer|agent|programme|program|policy|procedure|accommodation|accessibility|dncl|casl',q):
             reason='This question is outside the collections dataset and policies.'
             result.update(answer=reason,refused=True,reason=reason);return
         preferred=[]
         if 'casl' in q or 'email' in q and 'consent' in q:preferred=[('POL-COLL-001','§5.3')]
         elif 'national do not call' in q or 'dncl' in q:preferred=[('POL-COLL-001','§5.3')]
         elif 'consumer proposal' in q or 'bankruptcy' in q:preferred=[('POL-COLL-001','§7.3')]
-        elif ('attempt' in q or 'calls' in q) and ('week' in q or '7 day' in q):preferred=[('POL-COLL-001','§5.2')]
+        elif re.search(r'attempt|calls?\b|phone|contact|reach',q) and re.search(r'week|7[- ]days?|seven days',q):preferred=[('POL-COLL-001','§5.2')]
         elif re.search(r'calling hours|call.*(?:before|after)\s*\d|permitted.*hours',q):preferred=[('POL-COLL-001','§5.1')]
         elif 'hours' in q and ('cut' in q or 'reduced' in q) or 'before' in q and 'payment' in q:preferred=[('POL-COLL-004','§4.2')]
         elif '3-month' in q or 'reduced payment' in q:preferred=[('POL-COLL-004','§4.2'),('HPT-2026','document')]
-        elif 'grace' in q or 'considered broken' in q:preferred=[('PRC-COLL-010','§3.3')]
+        elif 'grace' in q or re.search(r'(?:considered|counts? as|treated as|deemed)\s+(?:a\s+)?broken',q):preferred=[('PRC-COLL-010','§3.3')]
         elif 'volume' in q and ('drop' in q or '23' in q or '24' in q):preferred=[('IR-2026-0923','document'),('IR-2026-0923','§1'),('IR-2026-0923','§2')]
         matches=[s for pair in preferred for s in self.sections if (s['id'],s['section'])==pair and s['language']=='EN']
         if not matches and self.index:

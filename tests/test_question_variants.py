@@ -14,19 +14,10 @@ from app.insights import InsightEngine
 
 SNAPSHOT_END = date(2026, 9, 29)  # end-exclusive day after the 28 Sep snapshot
 
-# Confirmed failures from the first run (4 Oct, commit 7fe9c21). Strict: once the
-# engine is fixed the test passes, pytest reports XPASS(strict) as a failure, and
-# the ID must be removed here. QV-02/10/15/16/18/20 are fixed by the patch in
-# docs/question-variant-validation.md; QV-13 needs filter support.
-KNOWN_FAILURES = {
-    'QV-02': 'by-product grouping silently dropped: "break rate ... PTPs" falls through to the ungrouped template',
-    'QV-10': '"in each queue" is not read as a grouping; returns the overall open-case count',
-    'QV-13': 'named province is a filter; the compiler supports no filters and asks for clarification',
-    'QV-15': '"phone" is not in the policy keyword gate; refused as out of scope',
-    'QV-16': '"counts as broken" is routed to the broken-promise-rate metric instead of PRC-COLL-010 section 3.3',
-    'QV-18': '"household" is missing from the protected-attribute refusal; asks for clarification instead',
-    'QV-20': '"language" grouping is refused as a protected attribute; expected an unsupported-grouping clarification',
-}
+# Confirmed failures still open. Strict: a fixed case XPASSes and fails the run,
+# so its ID must be removed here. All seven first-run failures (4 Oct, commit
+# 7fe9c21) are fixed; see docs/question-variant-validation.md.
+KNOWN_FAILURES = {}
 
 
 def cases(rows):
@@ -111,7 +102,6 @@ def test_metric_variants_compile_requested_plan(engine, qid, question, metric, g
     assert (meta.get('start_date'), meta.get('end_date')) == (start.isoformat(), end.isoformat())
 
 
-@pytest.mark.xfail(strict=True, reason=KNOWN_FAILURES['QV-13'])
 def test_ontario_filter_is_answered_not_clarified(engine):
     """QV-13: a single named province is a common filter; the business answer is the filtered rate."""
     plan = engine._plan('what was the promise kept rate for ontario customers in august 2026?')
@@ -146,3 +136,64 @@ def test_policy_variants_cite_expected_section(policy_engine, qid, question, sec
     assert not result['refused']
     cited = [(s['document_id'], s['section']) for s in result['sources'] if isinstance(s, dict)]
     assert cited and cited[0] == section, f'{qid} cited {cited}'
+
+
+def test_province_filter_executes_with_bound_code_and_excludes_unlinked_records(engine):
+    """QV-13 follow-up: the filter is a bound parameter matched on the linked case."""
+    import duckdb
+    plan = engine._plan('what was the promise kept rate for ontario customers in august 2026?')
+    assert plan.metadata['filters'] == {'province': 'ON'}
+    assert "'ON'" not in plan.sql and plan.sql.count('?') == len(plan.params)
+    with duckdb.connect() as db:
+        db.execute('CREATE SCHEMA curated')
+        db.execute('CREATE TABLE curated.collections_cases(case_id VARCHAR,province_code VARCHAR,queue VARCHAR)')
+        db.execute('CREATE TABLE curated.promises_to_pay(case_id VARCHAR,ptp_due_date DATE,ptp_status VARCHAR)')
+        db.execute("INSERT INTO curated.collections_cases VALUES ('on1','ON','early'),('qc1','QC','early')")
+        db.execute("INSERT INTO curated.promises_to_pay VALUES ('on1','2026-08-05','kept'),('on1','2026-08-06','broken'),('on1','2026-08-07','kept'),"
+                   "('qc1','2026-08-05','broken'),('orphan','2026-08-05','kept'),('on1','2026-09-05','broken')")
+        assert db.execute(plan.sql, plan.params).fetchall() == [(66.7, 3)]
+
+
+@pytest.mark.parametrize('question,code', [
+    ('RPC rate by channel in Quebec for August 2026', 'QC'),
+    ('Average DPD of open cases by queue in Alberta', 'AB'),
+    ('Hardship rate by product for cases opened in July 2026 in British Columbia', 'BC'),
+    ('Attempts per case in September 2026 for customers in Nova Scotia', 'NS'),
+])
+def test_province_filter_applies_across_case_linked_metrics(engine, question, code):
+    plan = engine._plan(question.lower())
+    assert plan.metadata['filters'] == {'province': code}
+    assert 'c.province_code=?' in plan.sql and plan.params[-1] == code
+
+
+@pytest.mark.parametrize('question', [
+    'Card delinquency rate in Ontario',  # account table has no reviewed province source
+    'Promise kept rate in Ontario and Quebec for August 2026',  # one filter only
+    'Promise kept rate for Toronto customers in August 2026',  # city/site is not a province
+])
+def test_unsupported_province_filters_ask_for_clarification(engine, question):
+    result = engine.answer(question)
+    assert not result['refused'] and result['reason'] == 'clarification_required'
+
+
+def test_province_filter_rejects_unknown_codes_from_any_planner():
+    from app.metric_plans import PlanError, compile_plan
+    base = {'metric_id': 'open_cases', 'grouping': 'none', 'start_date': '2026-09-28', 'end_date': '2026-09-29',
+            'clarification': None, 'refuse': False, 'refuse_reason': None}
+    for filters in [{'province': "ON' OR 1=1 --"}, {'province': 'ZZ'}, {'province': 'ON', 'queue': 'x'}]:
+        with pytest.raises(PlanError):
+            compile_plan({**base, 'filters': filters})
+    assert compile_plan({**base, 'filters': {'province': 'ON'}}).params == ['ON']
+
+
+def test_every_filterable_metric_and_grouping_binds_the_province_last():
+    from app.metric_plans import CATALOG, NO_FILTER, compile_plan
+    for metric, config in CATALOG.items():
+        if config['filters'] == NO_FILTER:
+            continue
+        dates = ('2026-09-28', '2026-09-29') if config.get('snapshot_only') else ('2026-08-01', '2026-09-01')
+        for grouping in config['groupings']:
+            plan = compile_plan({'metric_id': metric, 'grouping': grouping, 'start_date': dates[0], 'end_date': dates[1],
+                                 'filters': {'province': 'ON'}, 'clarification': None, 'refuse': False, 'refuse_reason': None})
+            assert plan.sql.count('?') == len(plan.params) and plan.params[-1] == 'ON', (metric, grouping)
+            assert plan.sql.rstrip().split(' GROUP BY')[0].endswith('c.province_code=?'), (metric, grouping)
