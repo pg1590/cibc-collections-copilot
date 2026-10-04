@@ -212,7 +212,18 @@ When the organizer releases extra questions at **19:00 IST on 4 October 2026**, 
 
 ```bash
 .venv/bin/python scripts/run_benchmark.py --extra /absolute/path/extra_questions.csv
+.venv/bin/python scripts/package_submission.py --extra /absolute/path/extra_questions.csv --final --check-only
 ```
+
+After checking results, commit and push the final revision, then run the same package command without `--check-only`. It creates `../deliverables/AddaWale-code-backup.zip` from committed files and records the commit and SHA-256 in a manifest. `--final` requires all 15 extra questions; a pre-release backup is interim. The check verifies format and coverage, not hidden-answer correctness.
+
+The nine-slide presentation is generated directly as PDF from the measured local reports:
+
+```bash
+.venv/bin/python scripts/generate_pitch_pdf.py
+```
+
+Output: `../deliverables/AddaWale-Presentation.pdf`. Regenerate and review it after the final benchmark run so its counts are current. The deck and existing architecture use conventional text, shapes and charts; no image-generation tool is used.
 
 For frontend checks, from the repository root:
 
@@ -262,6 +273,8 @@ These are local checks, not an organizer score. Hidden questions and future extr
 - [Accuracy and company readiness audit](docs/reviews/accuracy-readiness-audit.md)
 - [Combined build plan](docs/reviews/build-plan-review.md)
 - [Build status and remaining work](docs/build-status.md)
+- [Final submission checklist](docs/submission-checklist.md)
+- [Demo recording walkthrough](docs/demo-walkthrough.md)
 - [Historical design-phase document](docs/system-design.md)
 
 ## Scope and limitations
@@ -274,7 +287,7 @@ The question planner supports defined metrics and policy topics rather than unre
 
 If the app reports that the dataset is not ready, finish `scripts/build_data.py`. If brief generation reports that the model is missing, stop the backend, run `scripts/train_model.py`, then restart it. If requests fail, check that the backend is running on port 8000 and the frontend on port 3000.
 
-The final architecture artifact is ready. The remaining submission work includes a **demo video of at most five minutes**, a **PDF pitch deck of at most ten slides**, browser verification, and the extra-question benchmark run. Organizer submission, external deployment and collaborator invitations have not been performed. Keep the repository private and give access to the organizer identities once provided. The build deadline is **4 October 2026 at 21:00 IST**; later commits are excluded.
+The architecture and nine-slide presentation PDF are prepared. The user will record a **demo video of at most five minutes** using the walkthrough. Browser verification, accessible video upload and the 19:00 extra-question benchmark run remain. Invite **`cibchack26` by 17:00 IST** through the owner's GitHub collaborator settings; invitation/access is unverified. Keep the repository private. The final form allows **one submission per team**, requiring the repo link, code ZIP, accessible video link and presentation PDF. No form submission or external deployment has been performed. The build deadline is **4 October 2026 at 21:00 IST**; later commits are excluded.
 
 ## AI tool disclosure
 

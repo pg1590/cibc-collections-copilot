@@ -43,6 +43,54 @@ def count(conn, sql):
     return conn.execute(sql).fetchone()[0]
 
 
+def quality_handling(check):
+    name, table = check['check'], check['table']
+    if name.endswith('_unique_non_null'):
+        return 'Check uniqueness and missing keys. No key is invented or silently reassigned; any failure requires review.'
+    if name.startswith('invalid_'):
+        return 'Normalize supported dates/types with TRY_CAST and TRY_STRPTIME. Keep unparseable values in raw data, set curated value to null and count the failure.'
+    if name.endswith('_referential_integrity'):
+        if table == 'collections_cases':
+            return 'Retain source rows in raw/curated and portfolio totals. Exclude unlinked CRM references from golden C360 cases; report the coverage gap.'
+        if table == 'agent_notes':
+            return 'Retain raw/curated notes. Exclude notes without a resolved CRM link from the golden latest-note view.'
+        return 'Retain raw/curated contacts and flag orphan case references. Do not invent a case link; case-joined queries cannot recover the missing case.'
+    if name == 'dpd_missing':
+        return 'Preserve null DPD. Exclude unknown DPD from delinquency-rate calculations and report the denominator; do not impute a DPD value.'
+    if name.endswith('_disagrees_with_dpd'):
+        return 'Count and retain both reported bucket and DPD. Use reported buckets for the applicable released benchmark and DPD where the metric specifies it; discrepancy remains unresolved.'
+    if name in ['date_of_birth_missing', 'primary_phone_e164_missing']:
+        return 'Preserve missing values. Match only when independent available evidence satisfies the identity rules; otherwise retain review/unmatched status.'
+    if name == 'contact_ts_utc_missing':
+        return 'Check timestamps and retain raw source values. Preserve missing values; do not fabricate a contact timestamp.'
+    return 'Retain the source value, report the measured issue and require review before unsupported correction.'
+
+
+def write_quality_report(report):
+    lines = ['# Counted data quality report',
+             f"Snapshot: {report['snapshot_date']}. Data built: {report['built_at']}.", '',
+             'The table below distinguishes handling from repair. Missing source facts and contradictory values remain unresolved when no authoritative correction is available. Raw source files remain intact. A row can fail several checks, so failed counts must not be added as a count of distinct customers.', '',
+             '| Table | Raw rows | Curated rows |', '|---|---:|---:|']
+    lines += [f"| {table} | {n:,} | {report['curated_counts'][table]:,} |" for table, n in report['raw_counts'].items()]
+    lines += ['', '| Check | Table | Affected rows | Total rows | Severity | Handling / correction |',
+              '|---|---|---:|---:|---|---|']
+    lines += [f"| {x['check']} | {x['table']} | {x['failed_rows']:,} | {x['total_rows']:,} | {x['severity']} | {quality_handling(x)} |" for x in report['checks']]
+    identity = report['identity']
+    lines += ['', '## Identity resolution and normalization', '',
+              f"The pipeline creates {identity['golden_customers']:,} golden customer records from {identity['crm_records']:,} CRM rows. This is conservative identity resolution, not a claim of perfect recovery of the underlying one million people.", '',
+              '| Source-key outcome | Count | Handling |', '|---|---:|---|',
+              f"| Matched | {identity.get('matched', 0):,} | Accept only the documented identity rules and unique-candidate margin. Rule scores are not calibrated probabilities. |",
+              f"| Review | {identity.get('review', 0):,} | Keep candidate evidence for review and exclude these links from golden account balances. |",
+              f"| Unmatched | {identity.get('unmatched', 0):,} | Preserve source keys without fabricating a customer link; exclude these links from golden account balances. |", '',
+              'These counts refer to source keys across systems, not distinct people. Declared CRM duplicates merge only when date of birth and independent name or phone evidence agree. RapidFuzz name similarity is a review diagnostic and cannot independently authorize a match.', '',
+              'Mixed supported date formats become typed dates/timestamps. Customer IDs remain strings to preserve leading zeros. Only empty CSV fields become null; literal NA, N/A and na remain values. The question engine coalesces channel_v2 with channel for the recorded schema drift.', '',
+              '## Remaining limitations', '',
+              'No source row is dropped during typed curation. Golden views intentionally exclude unresolved links. Source-wide totals can therefore differ from linked C360 totals. Missing DPD, missing identity evidence, orphan references and bucket contradictions are reported rather than claimed as repaired. Matching precision and missed-match rates require independently labelled identity pairs; those measures are not available yet.']
+    output = ROOT / 'docs/data-quality-report.md'
+    output.write_text('\n'.join(lines) + '\n')
+    return output
+
+
 def build(dataset=DATASET, db=DB, reload=False):
     dataset = Path(dataset).resolve(); db = Path(db).resolve()
     schema = json.loads((dataset / "schema/schema.json").read_text())
@@ -218,14 +266,17 @@ def build(dataset=DATASET, db=DB, reload=False):
     report['built_at']=datetime.now(timezone.utc).isoformat(); report['duration_seconds']=round(time.monotonic()-started,2)
     c.execute('CHECKPOINT'); c.close()
     QUALITY.write_text(json.dumps(report,indent=2))
-    lines=['# Counted data quality report',f"Snapshot: {SNAPSHOT}. Built: {report['built_at']}.",'','Invalid typed values become null in curated data; raw files retain original values. Identity review records are excluded from linked balances. Confidence is a rule score, not a probability.','','| Table | Raw rows | Curated rows |','|---|---:|---:|']
-    lines += [f"| {t} | {n:,} | {report['curated_counts'][t]:,} |" for t,n in report['raw_counts'].items()]
-    lines += ['','| Check | Table | Failed rows | Total rows | Severity |','|---|---|---:|---:|---|']
-    lines += [f"| {x['check']} | {x['table']} | {x['failed_rows']:,} | {x['total_rows']:,} | {x['severity']} |" for x in report['checks']]
-    lines += ['',f"Identity outcomes: `{json.dumps(report['identity'])}`",'','Limits: referential and typing checks are measured across loaded tables. Matching precision requires independently labelled identity pairs; no claim of measured precision is made. No source row is dropped during typed curation.']
-    (ROOT/'docs/data-quality-report.md').write_text('\n'.join(lines)+'\n')
+    write_quality_report(report)
     print(json.dumps({'duration_seconds':report['duration_seconds'],'identity':report['identity']},indent=2),flush=True)
 
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser(); parser.add_argument('--reload',action='store_true'); args=parser.parse_args(); build(reload=args.reload)
+    parser=argparse.ArgumentParser()
+    mode=parser.add_mutually_exclusive_group()
+    mode.add_argument('--reload',action='store_true')
+    mode.add_argument('--report-only',action='store_true',help='Regenerate Markdown from the measured quality JSON without rebuilding the database.')
+    args=parser.parse_args()
+    if args.report_only:
+        print(write_quality_report(json.loads(QUALITY.read_text())))
+    else:
+        build(reload=args.reload)

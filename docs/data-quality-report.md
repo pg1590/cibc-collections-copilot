@@ -1,7 +1,7 @@
 # Counted data quality report
-Snapshot: 2026-09-28. Built: 2026-10-03T06:37:29.700381+00:00.
+Snapshot: 2026-09-28. Data built: 2026-10-03T06:37:29.700381+00:00.
 
-Invalid typed values become null in curated data; raw files retain original values. Identity review records are excluded from linked balances. Confidence is a rule score, not a probability.
+The table below distinguishes handling from repair. Missing source facts and contradictory values remain unresolved when no authoritative correction is available. Raw source files remain intact. A row can fail several checks, so failed counts must not be added as a count of distinct customers.
 
 | Table | Raw rows | Curated rows |
 |---|---:|---:|
@@ -37,24 +37,38 @@ Invalid typed values become null in curated data; raw files retain original valu
 | geo_reference | 656 | 656 |
 | code_lookups | 113 | 113 |
 
-| Check | Table | Failed rows | Total rows | Severity |
-|---|---|---:|---:|---|
-| crm_customer_id_unique_non_null | customers | 0 | 1,020,000 | error |
-| contact_id_unique_non_null | contact_history | 0 | 2,688,337 | error |
-| case_id_unique_non_null | collections_cases | 0 | 367,229 | error |
-| ptp_id_unique_non_null | promises_to_pay | 0 | 238,815 | error |
-| case_id_referential_integrity | contact_history | 26,864 | 2,688,337 | warning |
-| coll_customer_ref_referential_integrity | collections_cases | 10,365 | 367,229 | warning |
-| crm_customer_id_referential_integrity | agent_notes | 21,592 | 760,594 | warning |
-| date_of_birth_missing | customers | 5,026 | 1,020,000 | warning |
-| primary_phone_e164_missing | customers | 15,223 | 1,020,000 | warning |
-| dpd_missing | card_accounts | 52,734 | 660,000 | warning |
-| dpd_missing | loan_accounts | 32,179 | 404,500 | warning |
-| contact_ts_utc_missing | contact_history | 0 | 2,688,337 | warning |
-| dpd_bucket_disagrees_with_dpd | card_accounts | 24,205 | 660,000 | warning |
-| dpd_bucket_disagrees_with_dpd | loan_accounts | 14,769 | 404,500 | warning |
-| current_bucket_disagrees_with_dpd | collections_cases | 3,807 | 367,229 | warning |
+| Check | Table | Affected rows | Total rows | Severity | Handling / correction |
+|---|---|---:|---:|---|---|
+| crm_customer_id_unique_non_null | customers | 0 | 1,020,000 | error | Check uniqueness and missing keys. No key is invented or silently reassigned; any failure requires review. |
+| contact_id_unique_non_null | contact_history | 0 | 2,688,337 | error | Check uniqueness and missing keys. No key is invented or silently reassigned; any failure requires review. |
+| case_id_unique_non_null | collections_cases | 0 | 367,229 | error | Check uniqueness and missing keys. No key is invented or silently reassigned; any failure requires review. |
+| ptp_id_unique_non_null | promises_to_pay | 0 | 238,815 | error | Check uniqueness and missing keys. No key is invented or silently reassigned; any failure requires review. |
+| case_id_referential_integrity | contact_history | 26,864 | 2,688,337 | warning | Retain raw/curated contacts and flag orphan case references. Do not invent a case link; case-joined queries cannot recover the missing case. |
+| coll_customer_ref_referential_integrity | collections_cases | 10,365 | 367,229 | warning | Retain source rows in raw/curated and portfolio totals. Exclude unlinked CRM references from golden C360 cases; report the coverage gap. |
+| crm_customer_id_referential_integrity | agent_notes | 21,592 | 760,594 | warning | Retain raw/curated notes. Exclude notes without a resolved CRM link from the golden latest-note view. |
+| date_of_birth_missing | customers | 5,026 | 1,020,000 | warning | Preserve missing values. Match only when independent available evidence satisfies the identity rules; otherwise retain review/unmatched status. |
+| primary_phone_e164_missing | customers | 15,223 | 1,020,000 | warning | Preserve missing values. Match only when independent available evidence satisfies the identity rules; otherwise retain review/unmatched status. |
+| dpd_missing | card_accounts | 52,734 | 660,000 | warning | Preserve null DPD. Exclude unknown DPD from delinquency-rate calculations and report the denominator; do not impute a DPD value. |
+| dpd_missing | loan_accounts | 32,179 | 404,500 | warning | Preserve null DPD. Exclude unknown DPD from delinquency-rate calculations and report the denominator; do not impute a DPD value. |
+| contact_ts_utc_missing | contact_history | 0 | 2,688,337 | warning | Check timestamps and retain raw source values. Preserve missing values; do not fabricate a contact timestamp. |
+| dpd_bucket_disagrees_with_dpd | card_accounts | 24,205 | 660,000 | warning | Count and retain both reported bucket and DPD. Use reported buckets for the applicable released benchmark and DPD where the metric specifies it; discrepancy remains unresolved. |
+| dpd_bucket_disagrees_with_dpd | loan_accounts | 14,769 | 404,500 | warning | Count and retain both reported bucket and DPD. Use reported buckets for the applicable released benchmark and DPD where the metric specifies it; discrepancy remains unresolved. |
+| current_bucket_disagrees_with_dpd | collections_cases | 3,807 | 367,229 | warning | Count and retain both reported bucket and DPD. Use reported buckets for the applicable released benchmark and DPD where the metric specifies it; discrepancy remains unresolved. |
 
-Identity outcomes: `{"review_name_similarity_sample_size": 1000, "matched": 3671767, "review": 64145, "unmatched": 96355, "golden_customers": 1014631, "crm_records": 1020000, "confidence_kind": "Rule scores, not calibrated probabilities. Review/unmatched records are excluded from linked accounts."}`
+## Identity resolution and normalization
 
-Limits: referential and typing checks are measured across loaded tables. Matching precision requires independently labelled identity pairs; no claim of measured precision is made. No source row is dropped during typed curation.
+The pipeline creates 1,014,631 golden customer records from 1,020,000 CRM rows. This is conservative identity resolution, not a claim of perfect recovery of the underlying one million people.
+
+| Source-key outcome | Count | Handling |
+|---|---:|---|
+| Matched | 3,671,767 | Accept only the documented identity rules and unique-candidate margin. Rule scores are not calibrated probabilities. |
+| Review | 64,145 | Keep candidate evidence for review and exclude these links from golden account balances. |
+| Unmatched | 96,355 | Preserve source keys without fabricating a customer link; exclude these links from golden account balances. |
+
+These counts refer to source keys across systems, not distinct people. Declared CRM duplicates merge only when date of birth and independent name or phone evidence agree. RapidFuzz name similarity is a review diagnostic and cannot independently authorize a match.
+
+Mixed supported date formats become typed dates/timestamps. Customer IDs remain strings to preserve leading zeros. Only empty CSV fields become null; literal NA, N/A and na remain values. The question engine coalesces channel_v2 with channel for the recorded schema drift.
+
+## Remaining limitations
+
+No source row is dropped during typed curation. Golden views intentionally exclude unresolved links. Source-wide totals can therefore differ from linked C360 totals. Missing DPD, missing identity evidence, orphan references and bucket contradictions are reported rather than claimed as repaired. Matching precision and missed-match rates require independently labelled identity pairs; those measures are not available yet.
