@@ -106,12 +106,12 @@ class InsightEngine:
                 if not file.is_relative_to((self.dataset_root/'files/docs').resolve()) or not file.exists():continue
                 text=file.read_text(encoding='utf-8')
                 if not re.search(r'^## ',text,flags=re.M):
-                    sections.append({'id':row['doc_id'],'version':row['version'],'type':row['doc_type'],'language':row['language'],'section':'document','text':text.strip(),'path':str(file.relative_to(self.dataset_root))})
+                    sections.append({'id':row['doc_id'],'version':row['version'],'type':row['doc_type'],'language':row['language'],'section':'document','text':text.strip(),'path':file.relative_to(self.dataset_root).as_posix()})
                 for part in re.split(r'(?=^## )',text,flags=re.M):
                     heading=part.splitlines()[0] if part.splitlines() else ''
                     if not heading.startswith('## '):continue
                     section=re.search(r'(§[\d.]+|Q\d+)',heading)
-                    sections.append({'id':row['doc_id'],'version':row['version'],'type':row['doc_type'],'language':row['language'],'section':section.group(0) if section else heading,'text':part.strip(),'path':str(file.relative_to(self.dataset_root))})
+                    sections.append({'id':row['doc_id'],'version':row['version'],'type':row['doc_type'],'language':row['language'],'section':section.group(0) if section else heading,'text':part.strip(),'path':file.relative_to(self.dataset_root).as_posix()})
         return sections
 
     def _connect(self):

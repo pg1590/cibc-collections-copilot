@@ -59,6 +59,17 @@ On the first run (commit `e0db35f`), the 7 failures were marked as strict expect
 - Run `scripts/run_benchmark.py --local` and check `git diff submission/benchmark_answers.csv`. No released answer is expected to change. The README says none of the 35 currently need clarification, and the changes only widen recognition. Inspect any diff before accepting it.
 - Run the filtered queries once on the real schema. `contact_history.case_id` and `collections_cases.province_code` are used by existing reviewed queries, but the new combinations have only been run on test tables.
 
+## Release-file checks (4 Oct, ~18:30 IST)
+
+The release ZIP was available, but the DuckDB build was not run. The small release files were extracted (benchmark questions, dev answers, 19 reference documents) to check what can be checked without the database:
+
+- **Released benchmark unchanged:** all 35 released questions were run through `7fe9c21` (main) and this branch with the real policy corpus (36 sections). Refusal flags, refusal text, policy answers and citations, and every generated SQL plan and parameter list are **identical**: 0 differences. Data answers come from that SQL, so this branch cannot change any of the 35 released answers.
+- **Policy answers against dev gold:** BQ-002, BQ-005, BQ-019 and BQ-026 cite the gold section, and every key fact checked is in the answer text. BQ-026 contains "3-month", "50%" and "interest keeps accruing", taken from the current v4.2 policy, not the superseded 6-month FAQ. BQ-018, BQ-024 and BQ-031 are refused as gold requires.
+- **Variants on the full corpus:** QV-15, QV-16 and QV-17 cite §5.2, §3.3 and §7.3 on the real 19 documents, not just the five-section test corpus.
+- **Windows path fix:** on Windows, cited paths used backslashes (`files\docs\...`). That would make `sql_or_sources` depend on the OS. Paths now use `as_posix()`, matching the committed CSV generated on Linux. A test covers this.
+
+Not yet checked against the database: the numeric dev answers (`scripts/validate_dev.py`) and the filtered SQL on the real schema. Both need `scripts/build_data.py` or the existing database on Prakhar's machine.
+
 ## Remaining failures
 
 None of the 20 variants fail after the fixes. This is planning-level coverage of these 20 questions, not an accuracy rate for unseen questions. Other cohort filters (queue, product, "open cases only", hardship cases) still ask for clarification by design.

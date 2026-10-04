@@ -197,3 +197,16 @@ def test_every_filterable_metric_and_grouping_binds_the_province_last():
                                  'filters': {'province': 'ON'}, 'clarification': None, 'refuse': False, 'refuse_reason': None})
             assert plan.sql.count('?') == len(plan.params) and plan.params[-1] == 'ON', (metric, grouping)
             assert plan.sql.rstrip().split(' GROUP BY')[0].endswith('c.province_code=?'), (metric, grouping)
+
+
+def test_policy_citation_paths_are_identical_on_windows_and_linux(tmp_path):
+    """Benchmark sql_or_sources must not depend on the OS path separator."""
+    docs = tmp_path / 'files/docs/policy'
+    docs.mkdir(parents=True)
+    (docs / 'POL-X_v1.0_EN.md').write_text('## §1 Test\nCollections contact text.', encoding='utf-8')
+    (tmp_path / 'data').mkdir()
+    (tmp_path / 'data/reference_documents.csv').write_text(
+        'doc_id,doc_type,language,version,effective_date,superseded_by,file_path\n'
+        'POL-X,policy,EN,1.0,2026-01-01,,docs/policy/POL-X_v1.0_EN.md\n', encoding='utf-8')
+    engine = InsightEngine(tmp_path / 'missing.duckdb', tmp_path)
+    assert [s['path'] for s in engine.sections] == ['files/docs/policy/POL-X_v1.0_EN.md']
