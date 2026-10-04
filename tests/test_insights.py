@@ -160,10 +160,14 @@ def test_model_plan_is_compiled_and_never_executed_as_sql(engine):
     assert not result['rows'] and not result['sql_or_sources']
 
 
+def test_single_province_is_a_bound_filter_not_a_clarification(engine):
+    plan=engine._plan('rpc rate in ontario in september 2026')
+    assert plan.metadata['filters']=={'province':'ON'} and plan.params[-1]=='ON'
+
+
 @pytest.mark.parametrize('question',[
  'Cure rate for hardship cases in August 2026',
  'Promise-kept rate for hardship cases in September 2026',
- 'RPC rate in Ontario in September 2026',
  'How many cases were opened in May?',
  'Average DPD at the end of May 2026',
  'Do certified agents in the randomised pilot have higher promise-kept rates?',
