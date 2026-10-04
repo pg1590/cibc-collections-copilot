@@ -170,6 +170,11 @@ def test_province_filter_applies_across_case_linked_metrics(engine, question, co
     'Card delinquency rate in Ontario',  # account table has no reviewed province source
     'Promise kept rate in Ontario and Quebec for August 2026',  # one filter only
     'Promise kept rate for Toronto customers in August 2026',  # city/site is not a province
+    'Promise-kept rate in August 2026 excluding Ontario',
+    'Promise-kept rate for customers not in Ontario in August 2026',
+    'RPC rate in ON and QC in August 2026',
+    'RPC rate in ON/QC in August 2026',
+    'RPC rate in Ontario and QC in August 2026',
 ])
 def test_unsupported_province_filters_ask_for_clarification(engine, question):
     result = engine.answer(question)
@@ -180,7 +185,8 @@ def test_province_filter_rejects_unknown_codes_from_any_planner():
     from app.metric_plans import PlanError, compile_plan
     base = {'metric_id': 'open_cases', 'grouping': 'none', 'start_date': '2026-09-28', 'end_date': '2026-09-29',
             'clarification': None, 'refuse': False, 'refuse_reason': None}
-    for filters in [{'province': "ON' OR 1=1 --"}, {'province': 'ZZ'}, {'province': 'ON', 'queue': 'x'}]:
+    for filters in [{'province': "ON' OR 1=1 --"}, {'province': 'ZZ'}, {'province': 'ON', 'queue': 'x'},
+                    {'province': None}, {'province': []}, {'province': {}}, {'province': 1}]:
         with pytest.raises(PlanError):
             compile_plan({**base, 'filters': filters})
     assert compile_plan({**base, 'filters': {'province': 'ON'}}).params == ['ON']

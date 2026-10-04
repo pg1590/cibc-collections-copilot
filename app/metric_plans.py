@@ -82,7 +82,7 @@ def _validate(spec):
     if not isinstance(filters, dict) or set(filters) - {"province"}:
         raise PlanError("Only a single province filter is supported; please clarify the required cohort.")
     province = filters.get("province")
-    if province is not None and province not in PROVINCES:
+    if "province" in filters and (not isinstance(province, str) or province not in PROVINCES):
         raise PlanError("The province filter must be a two-letter Canadian province or territory code.")
     if type(spec.get("refuse", False)) is not bool:
         raise PlanError("refuse must be a boolean.")

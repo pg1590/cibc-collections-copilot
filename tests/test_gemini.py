@@ -87,6 +87,15 @@ def test_provider_sql_is_not_accepted_as_a_plan(configured):
     assert client.trace_metadata()['stages']['plan'] == 'fallback'
 
 
+@pytest.mark.parametrize('province', [None, [], {}, 1, 'ZZ', "ON' OR 1=1 --"])
+def test_invalid_provider_province_uses_safe_fallback(configured, province):
+    plan = {'metric_id': 'open_cases', 'grouping': 'none', 'start_date': '2026-09-28', 'end_date': '2026-09-29',
+            'filters': {'province': province}, 'clarification': None, 'refuse': False, 'refuse_reason': None}
+    client = GeminiClient(httpx.MockTransport(lambda _: response(plan)))
+    with pytest.raises(ProviderUnavailable):
+        client.plan('Open cases in Ontario', {})
+
+
 def test_read_timeout_becomes_safe_fallback(configured):
     def send(request):
         raise httpx.ReadTimeout('sensitive transport details', request=request)

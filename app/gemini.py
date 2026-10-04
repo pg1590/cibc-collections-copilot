@@ -180,6 +180,8 @@ class GeminiClient:
             {'question': question, 'catalog': catalog, 'snapshot_date': SNAPSHOT}, PLAN_SCHEMA, 'plan')
         if set(result) != PLAN_FIELDS or type(result['refuse']) is not bool or not isinstance(result['filters'], dict) or set(result['filters']) - {'province'}:
             raise ProviderUnavailable('Gemini plan failed structural validation.')
+        if 'province' in result['filters'] and (not isinstance(result['filters']['province'], str) or result['filters']['province'] not in PROVINCES):
+            raise ProviderUnavailable('Gemini plan contains an invalid province filter.')
         for key in PLAN_FIELDS - {'filters', 'refuse'}:
             if result[key] is not None and (not isinstance(result[key], str) or len(result[key]) > 600):
                 raise ProviderUnavailable('Gemini plan contains invalid fields.')

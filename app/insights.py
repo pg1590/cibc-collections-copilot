@@ -25,6 +25,22 @@ CHANNEL='coalesce(h.channel_v2,h.channel)'
 PROVINCE_NAMES={'ontario':'ON','quebec':'QC','québec':'QC','alberta':'AB','manitoba':'MB','saskatchewan':'SK','british columbia':'BC','nova scotia':'NS','new brunswick':'NB','newfoundland':'NL','labrador':'NL','prince edward island':'PE','yukon':'YT','northwest territories':'NT','nunavut':'NU'}
 
 
+def province_filter(q):
+    """Accept one positive province; clarify exclusions and combined regions."""
+    provinces={code for name,code in PROVINCE_NAMES.items() if re.search(r'\b'+name+r'\b',q)}
+    codes=r'(?:on|qc|ab|bc|mb|sk|ns|nb|nl|pe|yt|nt|nu)'
+    for match in re.finditer(r'\b(?:in|from|provinces?)\s+('+codes+r'\b(?:\s*(?:,|/|&|\band\b|\bor\b)\s*'+codes+r'\b)*)',q):
+        provinces.update(code.upper() for code in re.findall(r'\b'+codes+r'\b',match[1]))
+    for name in PROVINCE_NAMES:
+        for match in re.finditer(r'\b'+name+r'\s*(?:,|/|&|\band\b|\bor\b)\s*('+codes+r')\b',q):
+            provinces.add(match[1].upper())
+    if len(provinces)>1 or re.search(r'\b(toronto|halifax|montreal|montréal|winnipeg|vancouver|calgary|edmonton|ottawa)\b',q):
+        raise PlanError('Only one province can be used as a filter. A named city or site needs clarification; request a single province or a supported grouping.')
+    if provinces and re.search(r'\b(?:excluding|exclude|except|outside|without|other than|apart from|not in|not from)\b',q):
+        raise PlanError('Province exclusions are unsupported. Request one included province or a supported grouping.')
+    return {'province':provinces.pop()} if provinces else {}
+
+
 def tokens(text):return re.findall(r'[a-z0-9]+',text.lower())
 
 
@@ -311,11 +327,7 @@ class InsightEngine:
         if metric=='broken_promise_rate' and re.search(r'\bnumber of broken|\bhow many broken|\bcount.*broken',q) and not re.search(r'\brate\b|\bshare\b',q):
             raise PlanError('Please clarify whether you need a count or a broken-promise rate; this metric compiler returns the rate among resolved promises.')
         if metric!='hardship_rate' and re.search(r'\bhardship\b',q):raise PlanError('Filtering this metric to hardship cases/accounts requires a separately defined cohort; please clarify the source flag and population.')
-        provinces={code for name,code in PROVINCE_NAMES.items() if re.search(r'\b'+name+r'\b',q)}
-        provinces|={m.upper() for m in re.findall(r'\b(?:in|from|province)\s+(on|qc|ab|bc|mb|sk|ns|nb|nl|pe|yt|nt|nu)\b',q)}
-        if len(provinces)>1 or re.search(r'\b(toronto|halifax|montreal|montréal|winnipeg|vancouver|calgary|edmonton|ottawa)\b',q):
-            raise PlanError('Only one province can be used as a filter. A named city or site is a cohort filter that needs clarification; request a single province or a supported grouping.')
-        filters={'province':provinces.pop()} if provinces else {}
+        filters=province_filter(q)
         if re.search(r'\b(?:for|among|only|with|without|excluding|exclude|where)\b.*\b(?:late[- ]stage|early[- ]stage|closed|certified|uncertified|french|english|mortgage|gold|platinum|silver|secured|unsecured|1\s*[-–]\s*30)\b',q):
             raise PlanError('The requested cohort filter is unsupported. Specify the metric population and a supported grouping without custom filters.')
         if re.search(r'\bopen\s+cases?\b',q) and metric not in ['open_cases','average_dpd']:
