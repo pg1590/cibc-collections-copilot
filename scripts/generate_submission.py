@@ -150,7 +150,7 @@ def markdown(d):
     return '\n'.join(lines).rstrip()+'\n'
 
 def main():
-    d=json.loads((ROOT/'docs/submission-content.json').read_text())
+    d=json.loads((ROOT/'docs/archive/prelim/submission-content.json').read_text())
     out=ROOT/'submission'/f'{d["team"]}_SystemDesign.pdf'
     out.parent.mkdir(parents=True, exist_ok=True)
     story=[para(d['title'],H1),para(d['subtitle'],BODY),para('TEAM: '+d['team'],H2),para('MEMBERS: '+', '.join(d['members']),SMALL),Spacer(1,5),Architecture()]

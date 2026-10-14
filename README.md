@@ -289,7 +289,7 @@ The nine-slide presentation is generated directly as PDF from the measured local
 .venv/bin/python scripts/generate_pitch_pdf.py
 ```
 
-The final deck also reads the C360 and independent parity reports. Generate them with `scripts/check_c360_contract.py` and `scripts/check_feature_parity.py --sample-size 1000 --output data/feature-parity.json` first. Its customer example is HAC-4447 and is checked against the local database. The [exact video script](docs/demo-walkthrough.md) includes its verified values, click sequence and copy-ready review text. Run `.venv/bin/python scripts/generate_demo_script_pdf.py` for the printable recording aid at `../deliverables/AddaWale-Video-Script.pdf`.
+The final deck also reads the C360 and independent parity reports. Generate them with `scripts/check_c360_contract.py` and `scripts/check_feature_parity.py --sample-size 1000 --output data/feature-parity.json` first. Its customer example is HAC-4447 and is checked against the local database. The [exact video script](docs/archive/prelim/demo-walkthrough.md) includes its verified values, click sequence and copy-ready review text. Run `.venv/bin/python scripts/generate_demo_script_pdf.py` for the printable recording aid at `../deliverables/AddaWale-Video-Script.pdf`.
 
 Output: `../deliverables/AddaWale-Presentation.pdf`. Regenerate and review it after the final benchmark run so its counts are current. The deck and existing architecture use conventional text, shapes and charts; no image-generation tool is used.
 
@@ -345,14 +345,14 @@ These are local checks, not an organizer score. Correctness of the extra answers
 - [Model evaluation](docs/model-evaluation.md)
 - [Released benchmark answers](submission/benchmark_answers.csv)
 - [API contract](docs/api-contract.md)
-- [Question planner implementation and scope](docs/reviews/insight-implementation.md)
-- [Extra benchmark implementation and review](docs/reviews/extra-benchmark-release.md)
+- [Question planner implementation and scope](docs/archive/prelim/reviews/insight-implementation.md)
+- [Extra benchmark implementation and review](docs/archive/prelim/reviews/extra-benchmark-release.md)
 - [Voice processing and measured checks](docs/voice-verification.md)
-- [Accuracy and company readiness audit](docs/reviews/accuracy-readiness-audit.md)
-- [Combined build plan](docs/reviews/build-plan-review.md)
-- [Build status and remaining work](docs/build-status.md)
-- [Final submission checklist](docs/submission-checklist.md)
-- [Demo recording walkthrough](docs/demo-walkthrough.md)
+- [Accuracy and company readiness audit](docs/archive/prelim/reviews/accuracy-readiness-audit.md)
+- [Combined build plan](docs/archive/prelim/reviews/build-plan-review.md)
+- [Build status and remaining work](docs/archive/prelim/build-status.md)
+- [Final submission checklist](docs/archive/prelim/submission-checklist.md)
+- [Demo recording walkthrough](docs/archive/prelim/demo-walkthrough.md)
 - [Historical design-phase document](docs/system-design.md)
 
 ## Scope and limitations
@@ -374,7 +374,7 @@ The application still requires supervisor approval for every brief. It does not 
 
 Customer matching is conservative: unresolved identities are excluded from linked accounts and counted in the quality report. The pipeline currently produces **1,014,631 golden customer records**; this is not a claim that it has perfectly recovered the release's underlying one million people. Source identifiers retain leading zeros, invalid typed values remain available in raw data, and only empty CSV fields become null. Portfolio totals include source cases with unresolved customer references, while C360 views contain linked cases, so their totals can differ.
 
-The question planner supports defined metrics and policy topics rather than unrestricted conversation. Requested supported groupings are preserved; unsupported groups and ambiguous cohorts require clarification. Historical roll-rate questions need two available month ends; generic collected-amount requests clarify the distinction between all case-account payments and payments against promises. The [accuracy audit](docs/reviews/accuracy-readiness-audit.md) records the original gaps; the [correctness release](docs/reviews/correctness-gemini-release.md) records fixes and remaining limits. The 12/12 numeric development result applies to those particular questions and does not establish correctness for all phrasings or hidden questions. The financial model can miss unfamiliar wording and nonfinancial hardship; its evaluation does not prove fairness, production readiness or improved recovery rates. Protected attributes are excluded from model inputs and serving views; restricted group data is used only for local evaluation.
+The question planner supports defined metrics and policy topics rather than unrestricted conversation. Requested supported groupings are preserved; unsupported groups and ambiguous cohorts require clarification. Historical roll-rate questions need two available month ends; generic collected-amount requests clarify the distinction between all case-account payments and payments against promises. The [accuracy audit](docs/archive/prelim/reviews/accuracy-readiness-audit.md) records the original gaps; the [correctness release](docs/archive/prelim/reviews/correctness-gemini-release.md) records fixes and remaining limits. The 12/12 numeric development result applies to those particular questions and does not establish correctness for all phrasings or hidden questions. The financial model can miss unfamiliar wording and nonfinancial hardship; its evaluation does not prove fairness, production readiness or improved recovery rates. Protected attributes are excluded from model inputs and serving views; restricted group data is used only for local evaluation.
 
 If the app reports that the dataset is not ready, finish `scripts/build_data.py`. If brief generation reports that the model is missing, stop the backend, run `scripts/train_model.py`, then restart it. If requests fail, check that the backend is running on port 8000 and the frontend on port 3000.
 
