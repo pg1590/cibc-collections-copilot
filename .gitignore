@@ -28,3 +28,4 @@ submission/*.png
 submission/*.zip
 submission/*.bundle
 .DS_Store
+.claude/settings.local.json
