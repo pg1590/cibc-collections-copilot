@@ -45,3 +45,18 @@ def test_hardship_demo_programmes(conn):
     eligible = {o['program_id'] for o in offers if o['status'] == 'likely_eligible'}
     assert {'HP-LOAN-RED3', 'HP-LOAN-EXT'} <= eligible
     assert next(o for o in offers if o['program_id'] == 'HP-LOAN-EXT')['approver'] == 'hardship_specialist'
+
+
+def test_calendar_matches_the_plan_window(conn):
+    from app import customer360
+    days = {d['date']: d for d in customer360.calendar(conn, 'SAV-6847')['days']}
+    assert days['2026-09-28']['status'] == 'cap' and days['2026-09-30']['status'] == 'holiday'
+    assert days['2026-10-01']['status'] == 'open' and days['2026-10-04']['from_local'] == '13:00'
+    assert customer360.calendar(conn, 'HAC-4447')['days'][0]['status'] == 'blocked'
+
+
+def test_timeline_is_newest_first_and_scoped(conn):
+    from app import customer360
+    events = customer360.timeline(conn, 'SAV-6847')['events']
+    assert events and all(a['ts'] >= b['ts'] for a, b in zip(events, events[1:]))
+    assert {e['kind'] for e in events} <= {'contact', 'promise', 'note', 'offer', 'case'}

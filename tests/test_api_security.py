@@ -70,3 +70,9 @@ def test_raw_identifiers_and_null_tokens(tmp_path):
     c=duckdb.connect()
     rows=c.execute("SELECT * FROM read_csv(?,all_varchar=true,header=true,nullstr='')",[str(p)]).fetchall();c.close()
     assert rows==[('0000123456','NA','N/A'),('0000000001',None,'na')]
+
+
+def test_timeline_and_calendar_respect_agent_scope(client):
+    h=headers(client,'agent')
+    assert client.get('/api/customers/C-2/timeline',headers=h).status_code==404
+    assert client.get('/api/customers/C-2/calendar',headers=h).status_code==404

@@ -15,7 +15,7 @@ from fastapi import Depends,FastAPI,HTTPException,Query
 from fastapi.security import HTTPAuthorizationCredentials,HTTPBearer
 from fastapi.responses import Response
 from pydantic import BaseModel,Field
-from app import storage, runtime, voice, action_plan, work_queue, portfolio_checks, call_session
+from app import storage, runtime, voice, action_plan, work_queue, portfolio_checks, call_session, customer360
 from app.features import VERSION,TEXT_FEATURES,feature_sql,evidence,definitions,text_features
 from app.settings import DATASET,DB,QUALITY,MODEL,MODEL_REPORT,ROOT,SNAPSHOT
 from datetime import date as _date,timedelta as _timedelta
@@ -156,6 +156,22 @@ def customer(cid:str,u=Depends(user)):
         notes=records(c,'SELECT note_id,note_ts,note_text,note_language,case_id FROM gold.latest_notes WHERE customer_id=?',[cid])
         features=records(c,'SELECT * FROM gold.features WHERE customer_id=?',[cid])[0] if c.execute("SELECT 1 FROM information_schema.tables WHERE table_schema='gold' AND table_name='features'").fetchone() else {}
     return {'customer':profile,'accounts':accounts,'cases':cases,'identity':links,'notes':notes,'features':features,'snapshot_date':SNAPSHOT}
+
+
+@app.get('/api/customers/{cid}/timeline')
+def customer_timeline(cid:str,days:int=Query(365,ge=7,le=3650),u=Depends(user)):
+    with db() as c:
+        authorize_customer(c,u,cid)
+        return customer360.timeline(c,cid,days)
+
+
+@app.get('/api/customers/{cid}/calendar')
+def customer_calendar(cid:str,days:int=Query(14,ge=1,le=42),u=Depends(user)):
+    with db() as c:
+        authorize_customer(c,u,cid)
+        result=customer360.calendar(c,cid,days)
+    if result is None:raise HTTPException(404,'This customer has no open case.')
+    return result
 
 
 VOICE_COLUMNS = '''v.voice_sample_id,v.transcript_id,v.file_path,v.file_size_bytes,
