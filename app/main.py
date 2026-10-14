@@ -14,7 +14,7 @@ from fastapi import Depends,FastAPI,HTTPException,Query
 from fastapi.security import HTTPAuthorizationCredentials,HTTPBearer
 from fastapi.responses import Response
 from pydantic import BaseModel,Field
-from app import storage, runtime, voice
+from app import storage, runtime, voice, action_plan, work_queue, portfolio_checks
 from app.features import VERSION,TEXT_FEATURES,feature_sql,evidence,definitions,text_features
 from app.settings import DATASET,DB,QUALITY,MODEL,MODEL_REPORT,ROOT,SNAPSHOT
 
@@ -104,6 +104,25 @@ def overview(u=Depends(user)):
         pending=s.execute("SELECT count(*) FROM briefs WHERE status='pending'"+(' AND actor=?' if u['role']=='agent' else ''),[u['username']] if u['role']=='agent' else []).fetchone()[0]
     row.update(identity={k:quality['identity'].get(k,0) for k in ['matched','review','unmatched']},quality_issues=sum(x['failed_rows'] for x in quality['checks']),pending_reviews=pending)
     return row
+
+
+@app.get('/api/overview/checks')
+def overview_checks(u=Depends(user)):
+    if u['role']=='agent':raise HTTPException(403,'Portfolio checks require an analyst or supervisor.')
+    with db() as c:items=portfolio_checks.run(c,(str(DB),DB.stat().st_mtime))
+    return {'snapshot_date':SNAPSHOT,'items':items}
+
+
+@app.get('/api/queue')
+def queue(agent:str|None=Query(None,max_length=32,pattern=r'^[A-Za-z0-9-]+$'),u=Depends(user)):
+    if u['role']=='analyst':raise HTTPException(403,'The work queue is for agents and supervisors.')
+    with db() as c:
+        # Agents only ever see their own assigned cases.
+        target=agent_id(c) if u['role']=='agent' or not agent else agent
+        result=work_queue.build(c,target)
+        if u['role']!='agent':
+            result['agents']=records(c,"SELECT assigned_agent_id agent_id,count(*) open_cases FROM gold.cases WHERE outcome IS NULL AND assigned_agent_id IS NOT NULL GROUP BY 1 ORDER BY 2 DESC,1 LIMIT 25")
+    return result
 
 
 @app.get('/api/customers')
@@ -307,11 +326,13 @@ def brief(body:Brief,u=Depends(user)):
     if profile['internal_do_not_call_flag']:
         recommendation+=' Internal do-not-call flag is recorded; do not initiate a call.'
         recommendation_reason+=' A separate internal do-not-call flag blocks calling.'
-    payload={'brief_id':str(uuid.uuid4()),'customer_id':body.customer_id,'summary':f"{facts['open_cases']} open case(s), CAD {facts['total_overdue']:,.2f} overdue. "+('Financial evidence: '+' '.join(spans) if spans else 'No supported financial text cue found in the latest note.'),'signals':signals,'recommendation':recommendation,'recommendation_reason':recommendation_reason,'hardship_status':hardship_status,'recorded_hardship_cases':recorded_cases,'contact_hold':hold,'policy_sources':policy_sources,'draft':draft,'status':'pending','model':{'name':'Financial hardship review triage','version':VERSION,'review_probability':round(probability,4),'input_features':bundle['features']},'features':features}
+    # Ordered next steps from source records and policy rules; the model never changes them.
+    with db() as c:plan=action_plan.for_customer(c,body.customer_id,hardship_status)
+    payload={'brief_id':str(uuid.uuid4()),'customer_id':body.customer_id,'summary':f"{facts['open_cases']} open case(s), CAD {facts['total_overdue']:,.2f} overdue. "+('Financial evidence: '+' '.join(spans) if spans else 'No supported financial text cue found in the latest note.'),'signals':signals,'recommendation':recommendation,'recommendation_reason':recommendation_reason,'hardship_status':hardship_status,'recorded_hardship_cases':recorded_cases,'contact_hold':hold,'policy_sources':policy_sources,'action_plan':plan,'next_action':plan['next_action'] if plan else None,'draft':draft,'status':'pending','model':{'name':'Financial hardship review triage','version':VERSION,'review_probability':round(probability,4),'input_features':bundle['features']},'features':features}
     runtime.enrich_brief(payload)
     with storage.connect() as s:
         s.execute('INSERT INTO briefs(brief_id,customer_id,actor,payload,status,created_at) VALUES(?,?,?,?,?,?)',(payload['brief_id'],body.customer_id,u['username'],json.dumps(payload,default=str),'pending',storage.now()))
-        storage.audit(s,u['username'],'generate_brief',payload['brief_id'],{'customer_id':body.customer_id,'model_version':VERSION,'policy_sources':policy_sources,'hardship_status':hardship_status,'recorded_hardship_cases':recorded_cases,'recommendation_reason':recommendation_reason,'generation':payload['generation']})
+        storage.audit(s,u['username'],'generate_brief',payload['brief_id'],{'customer_id':body.customer_id,'model_version':VERSION,'next_action':payload['next_action'],'policy_sources':policy_sources,'hardship_status':hardship_status,'recorded_hardship_cases':recorded_cases,'recommendation_reason':recommendation_reason,'generation':payload['generation']})
     return payload
 
 

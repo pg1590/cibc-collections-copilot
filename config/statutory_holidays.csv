@@ -1,0 +1,6 @@
+date,name,source
+2026-09-30,National Day for Truth and Reconciliation,POL-COLL-001 v3.0 §5.1 (named example); flagged in contact_history.stat_holiday_flag on 2025-09-30
+2026-10-12,Thanksgiving Day,Second Monday of October; contact_history.stat_holiday_flag flags 2025-10-13
+2026-12-25,Christmas Day,contact_history.stat_holiday_flag flags 2025-12-25
+2026-12-26,Boxing Day,contact_history.stat_holiday_flag flags 2025-12-26
+2027-01-01,New Year's Day,contact_history.stat_holiday_flag flags 2026-01-01

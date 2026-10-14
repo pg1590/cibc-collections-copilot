@@ -20,6 +20,8 @@ import { api, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useApi } from "@/lib/use-api";
 import type { ApiRecord, AuditEvent, Decision, ReviewItem } from "@/lib/types";
+import type { ReviewWithPlan } from "@/lib/plan-types";
+import { ActionPlanCard } from "@/components/action-plan";
 import { cn, formatDateTime } from "@/lib/utils";
 
 const DECISIONS: { value: Decision; label: string; icon: typeof Check }[] = [
@@ -218,6 +220,19 @@ function ReviewCard({ item, canDecide, onUpdated }: { item: ReviewItem; canDecid
             </div>
           )}
         </div>
+        {(item as ReviewWithPlan).action_plan && (
+          <Collapsible>
+            <CollapsibleTrigger asChild>
+              <Button variant="outline" size="sm" className="group h-auto py-1.5 text-left whitespace-normal">
+                Step-by-step plan: {(item as ReviewWithPlan).next_action}{" "}
+                <ChevronDown className="transition-transform group-data-[state=open]:rotate-180" aria-hidden />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-3">
+              <ActionPlanCard plan={(item as ReviewWithPlan).action_plan!} />
+            </CollapsibleContent>
+          </Collapsible>
+        )}
         {!!item.policy_sources?.length && (
           <div>
             <h3 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">Policy sources</h3>

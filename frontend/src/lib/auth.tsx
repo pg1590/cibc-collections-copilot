@@ -54,6 +54,7 @@ export function useAuth() {
 /** Which roles see each section. This only shapes the UI; the backend enforces access. */
 export const SECTION_ROLES = {
   overview: ["analyst", "agent", "supervisor"],
+  queue: ["agent", "supervisor"],
   customers: ["analyst", "agent", "supervisor"],
   ask: ["analyst", "supervisor"],
   briefs: ["agent", "supervisor"],

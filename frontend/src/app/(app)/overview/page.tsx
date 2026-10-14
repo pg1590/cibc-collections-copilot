@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, CheckCircle2, CircleDashed, RotateCw } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, CircleDashed, RotateCw } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { ErrorState, LoadingState } from "@/components/states";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import type { PortfolioCheck, PortfolioChecks } from "@/lib/plan-types";
 import { canSee, useAuth } from "@/lib/auth";
 import { useApi } from "@/lib/use-api";
 import type { Health, Overview } from "@/lib/types";
@@ -34,11 +36,39 @@ function Stat({ label, value, hint, href, tone }: { label: string; value: string
   );
 }
 
+function CheckCard({ check }: { check: PortfolioCheck }) {
+  return (
+    <Card className={check.severity === "high" ? "border-l-review gap-3 border-l-4 py-5" : "gap-3 py-5"}>
+      <CardContent className="space-y-2">
+        <p className="text-muted-foreground text-sm leading-snug">{check.title}</p>
+        <p className="text-3xl font-semibold tabular-nums">
+          {formatCount(check.value)} <span className="text-muted-foreground text-sm font-normal">{check.unit}</span>
+        </p>
+        <p className="text-sm leading-snug">{check.action}</p>
+        <Collapsible>
+          <CollapsibleTrigger className="text-muted-foreground hover:text-foreground group flex items-center gap-1 text-xs underline-offset-4 hover:underline">
+            <ChevronDown className="size-3.5 transition-transform group-data-[state=open]:rotate-180" aria-hidden /> Definition and SQL
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2 space-y-2">
+            <p className="text-xs leading-relaxed">{check.definition}</p>
+            <Badge variant="teal" className="font-mono whitespace-normal">
+              {check.policy}
+            </Badge>
+            <pre className="bg-muted/60 overflow-x-auto rounded-md p-2 font-mono text-[0.7rem] leading-relaxed whitespace-pre-wrap">{check.sql}</pre>
+          </CollapsibleContent>
+        </Collapsible>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function OverviewPage() {
   const { session } = useAuth();
   const role = session?.user.role;
   const health = useApi<Health>("/health");
   const overview = useApi<Overview>("/overview");
+  const showChecks = role === "analyst" || role === "supervisor";
+  const checks = useApi<PortfolioChecks>(showChecks ? "/overview/checks" : null);
 
   const identity = overview.data?.identity;
   const identityTotal = identity ? identity.matched + identity.review + identity.unmatched : 0;
@@ -62,6 +92,7 @@ export default function OverviewPage() {
             onClick={() => {
               health.reload();
               overview.reload();
+              if (showChecks) checks.reload();
             }}
           >
             <RotateCw aria-hidden /> Refresh
@@ -140,6 +171,32 @@ export default function OverviewPage() {
                 href={canSee(role, "quality") ? "/quality" : undefined}
               />
             </section>
+
+            {showChecks && (
+              <section aria-labelledby="checks-heading" className="space-y-3">
+                <div>
+                  <h2 id="checks-heading" className="text-lg font-semibold">
+                    Problems across all customers
+                  </h2>
+                  <p className="text-muted-foreground text-sm">
+                    Policy checks over the whole portfolio at the snapshot. Each number is one SQL query you can open and rerun.
+                  </p>
+                </div>
+                {checks.loading ? (
+                  <LoadingState label="Running portfolio checks" rows={2} />
+                ) : checks.error ? (
+                  <ErrorState message={checks.error} onRetry={checks.reload} />
+                ) : (
+                  checks.data && (
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {checks.data.items.map((c) => (
+                        <CheckCard key={c.id} check={c} />
+                      ))}
+                    </div>
+                  )
+                )}
+              </section>
+            )}
 
             <Card>
               <CardHeader>

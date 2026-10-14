@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowRight, Cpu, Hourglass, Loader2, Sparkles } from "lucide-react";
+import { ActionPlanCard } from "@/components/action-plan";
 import { PageHeader } from "@/components/page-header";
 import { KeyValueList } from "@/components/record-table";
 import { RoleGate } from "@/components/role-gate";
@@ -17,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorMessage } from "@/lib/api";
-import type { Brief } from "@/lib/types";
+import type { BriefWithPlan as Brief } from "@/lib/plan-types";
 import { displayValue } from "@/lib/utils";
 
 function BriefView({ brief }: { brief: Brief }) {
@@ -34,6 +35,8 @@ function BriefView({ brief }: { brief: Brief }) {
           </p>
         </AlertDescription>
       </Alert>
+
+      {brief.action_plan && <ActionPlanCard plan={brief.action_plan} />}
 
       <Card>
         <CardHeader>
@@ -87,7 +90,7 @@ function BriefView({ brief }: { brief: Brief }) {
             </div>
           )}
           <div className="bg-accent/50 rounded-lg border border-primary/15 p-4">
-            <h3 className="text-accent-foreground mb-1 text-sm font-semibold">Recommended next step</h3>
+            <h3 className="text-accent-foreground mb-1 text-sm font-semibold">Overall recommendation</h3>
             <p className="leading-relaxed whitespace-pre-line">{brief.recommendation}</p>
             {brief.recommendation_reason && (
               <div className="mt-3 border-t border-primary/15 pt-3">
@@ -269,7 +272,7 @@ function BriefWorkspace() {
         {!brief && !error && !pending && (
           <EmptyState
             title="No brief yet"
-            description="Enter a customer ID to prepare a call brief: a summary, the evidence behind it, a recommended next step and a draft message."
+            description="Enter a customer ID to prepare a call brief: what to do in order, the evidence and policy behind each step, and a draft message."
           />
         )}
       </div>

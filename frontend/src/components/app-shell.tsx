@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
   ClipboardCheck,
+  ListOrdered,
   Database,
   FileText,
   LayoutDashboard,
@@ -24,6 +25,7 @@ import { cn } from "@/lib/utils";
 
 const NAV: { href: string; label: string; icon: LucideIcon; section: Section }[] = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard, section: "overview" },
+  { href: "/queue", label: "Work queue", icon: ListOrdered, section: "queue" },
   { href: "/customers", label: "Customers", icon: Users, section: "customers" },
   { href: "/ask", label: "Ask Collections", icon: MessageSquareText, section: "ask" },
   { href: "/briefs", label: "Agent brief", icon: FileText, section: "briefs" },

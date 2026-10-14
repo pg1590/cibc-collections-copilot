@@ -26,6 +26,7 @@ def api(tmp_path, monkeypatch):
     main.QUALITY.write_text(json.dumps({'identity': {}, 'checks': []}))
     monkeypatch.setattr(main.joblib, 'load', lambda _: {'model': ReviewModel(), 'features': TEXT_FEATURES})
     monkeypatch.setattr(main, 'feature_sql', lambda _: 'SELECT * FROM gold.test_features WHERE customer_id=?')
+    monkeypatch.setattr(main.action_plan, 'for_customer', lambda c, cid, status: {'next_action': 'stub', 'steps': [], 'hardship_status_seen': status})
     monkeypatch.setenv('COPILOT_GEMINI_ENABLED', '0')
     monkeypatch.delenv('COPILOT_SUPERVISOR_PASSWORD', raising=False)
     with duckdb.connect(str(main.DB)) as c:
