@@ -4,6 +4,19 @@ Collections Copilot is a web application built for the CIBC hackathon. It helps 
 
 **Team:** Prakhar Gupta, Aryan Shrivastava, Krish Agarwal and Ved Maurya.
 
+## Finals build (October 2026)
+
+The prelim submission is tagged `prelim-submission`. For the finals we added:
+
+- **Step-by-step agent brief.** Every brief now opens with *What to do, in order*: restrictions → representative → disputes and complaints → vulnerable-customer approach → hardship programmes → open promise → when contact is legal → payment ask timed to payday. Each step cites its policy section and source record, and the steps are rules over source data; the model can only flag possible hardship for a person to confirm ([app/action_plan.py](app/action_plan.py)).
+- **Work queue.** Each agent's open cases in a fixed, explainable urgency order, with the reason for each position and the next time policy allows contact ([app/work_queue.py](app/work_queue.py)).
+- **Problems across all customers.** Overview tiles for policy problems across the portfolio, each with its definition and the exact SQL ([app/portfolio_checks.py](app/portfolio_checks.py)).
+- **Question box for live questions.** Monthly trends, rankings, counts and hardship-programme lookups; a one-line plain-English summary first; unsupported questions get a clarification with supported rephrasings instead of a substituted number.
+- **Hardship detector v2.** Wider English and French cues plus illness, separation and disaster cues from POL-COLL-004 §4.2, measured with customer-grouped cross-validation ([evaluation](docs/hardship-detector-evaluation.md)).
+- **Verification.** A rendered-browser walkthrough at desktop and phone width ([scripts/e2e_finals.mjs](scripts/e2e_finals.mjs)) and pinned demo customers ([tests/test_demo_customers.py](tests/test_demo_customers.py)). It found and fixed a concurrency bug in the database lockdown.
+- **Presentation material.** The [architecture diagram](docs/architecture-build.pdf), a 10-slide finals deck generated from measured results ([scripts/generate_finals_deck.py](scripts/generate_finals_deck.py)), the [live demo script](docs/demo-walkthrough.md) and [judge Q&A preparation](docs/finals-judge-qa.md).
+- **Cleanup.** Prelim planning notes and process reviews moved to [docs/archive](docs/archive/README.md).
+
 ## The problem we address
 
 A customer's information can be spread across separate systems for customer profiles, credit cards, loans, deposits and collections. Those systems may use different customer IDs and contain incomplete or conflicting records. An agent then has to piece together balances, payment promises, previous conversations and applicable policies before deciding what to do next.
@@ -16,10 +29,11 @@ The application uses the **synthetic Maple Bank dataset**, not real customer dat
 
 | Screen | Purpose |
 |---|---|
-| Overview | See customer counts, open cases, overdue amounts, identity matching results and pending reviews. |
+| Overview | See customer counts, open cases, overdue amounts, identity matching results, pending reviews and policy problems across all customers (each with its SQL). |
+| Work queue | An agent's open cases in urgency order, with the reason and the next allowed contact time for each. |
 | Customers | Search by name or customer ID and inspect linked accounts, cases, notes and matching evidence. |
 | Ask Collections | Ask supported portfolio or policy questions and inspect the SQL or source documents behind each answer. |
-| Briefs | Generate a customer summary, financial hardship review score, evidence, policy references and an English or French draft. |
+| Briefs | Generate an ordered, policy-cited plan of what to do, hardship programme checks, evidence, a review score and an English or French draft. |
 | Reviews | Approve, reject or edit a pending draft with a reason. Supervisors can inspect the audit log. |
 | Data quality / Feature registry | Inspect counted data issues, feature definitions, offline/live consistency and model evaluation. |
 
@@ -105,11 +119,11 @@ Gemini selects a supported metric, grouping and date range; the backend validate
 
 Province filters support one included Canadian province or territory on case-linked metrics, using a bound two-letter code. Records without a linked case are excluded and the answer states that limit. Province exclusions, multiple provinces and city filters require clarification. Card delinquency, write-off and SMS payment-link click share do not support province filters. The same validation applies to local and Gemini plans.
 
-The trained model is **class-balanced logistic regression**, implemented with scikit-learn. It uses six binary financial cues from English and French notes: income loss, income reduction, income delay, payment difficulty, hardship request and expense pressure. It does not receive unrestricted raw text or protected attributes. Its score is a review aid, not a hardship eligibility decision.
+The trained model is **class-balanced logistic regression**, implemented with scikit-learn. Feature version `c360-financial-v2` uses nine binary cues from English and French notes: income loss, income reduction, income delay, payment difficulty, hardship request, expense pressure, illness or injury, separation, and disaster or evacuation (the hardship circumstances in POL-COLL-004 §4.2). It does not receive unrestricted raw text, vulnerability markers or protected attributes. Its score is a review aid, not a hardship eligibility decision.
 
 Optional voice processing uses **Whisper base through faster-whisper**, locally on the CPU with int8 precision. It transcribes the supplied WAV audio; it does not substitute the provided transcript for speech recognition. Generated text, approximate segment timestamps and financial cue candidates are available for human inspection. Because the transcript has no speaker attribution, its cues do not enter the note classifier or change customer recommendations.
 
-The public labelled set contains 500 notes. Training uses 374 notes and evaluation uses 126, with customers kept separate between the two groups to reduce data leakage. Heldout precision is **89.29%**, recall **65.79%**, and F1 **75.76%**. Precision measures how often a positive prediction is correct; recall measures how many positive labels are found; F1 balances the two. These results apply to this small synthetic dataset, not production banking performance.
+The public labelled set contains 500 notes (146 hardship). With customer-grouped 5-fold cross-validation over 5 seeds, the v2 cues reach mean recall **95.2%** and precision **98.0%**, up from 68.4% and 90.3% with the v1 cues. On the original held-out split of 126 notes, which was not inspected while designing the cues, the model finds **36 of 38** hardship notes (v1: 25) with no false alarms (v1: 3). Precision measures how often a positive prediction is correct; recall measures how many positive labels are found. The synthetic notes reuse a small set of phrasings, so these figures describe coverage of this dataset, not production banking performance. Reproduce with `scripts/evaluate_hardship_cv.py`; see [the evaluation](docs/hardship-detector-evaluation.md).
 
 ### Technology choices
 
@@ -224,7 +238,7 @@ Requests have no automatic retries, use `store=false`, and share a bounded proce
 1. Sign in as **supervisor** and open **Overview**. The current source snapshot contains **96,000 open collections cases**; open means no recorded outcome.
 2. Open **Customers**, select a customer and inspect their accounts, cases, latest note and source identity links. Matching scores describe rule strength, not calibrated probabilities.
 3. Open **Ask Collections** and try the questions below. Expand **SQL or sources used** to inspect the evidence.
-4. Generate a brief from a customer record. Compare its case count and overdue amount with the customer view, and inspect the financial cues, model details, policies and draft.
+4. Open **Work queue** to see one agent's cases in urgency order with the next allowed contact time, then prepare a brief from a row. Try `SAV-6847` (contact cap plus the 30 September holiday push the next call to Thursday), `JEV-1240` (hardship programmes before payment) and `HAC-4447` (consumer proposal: don't contact). Inspect each step's policy section and source record.
 5. Open **Reviews**, approve, reject or edit the pending brief, and enter a reason. Refresh the page to confirm the decision persists; inspect its audit event. Use another pending brief to test another decision, because an already reviewed brief cannot be reviewed again.
 6. Open **Data quality / Feature registry** to inspect issues and definitions. The measured offline/live comparison covers **100 customers with zero mismatches**.
 7. Sign out and test the **agent** account. Its customer list is scoped to assigned cases, portfolio questions are blocked, and supervisor review controls are unavailable. An incorrect password should also be rejected.
@@ -266,6 +280,15 @@ With the backend running and default demo passwords, run the HTTP integration ch
 
 This check creates a synthetic brief and records a supervisor edit and audit event in the local database.
 
+For the rendered-browser check of the finals demo path, start the backend with a scratch review store (`COPILOT_STATE` keeps test briefs out of the demo reviews), start the frontend, then run Playwright. `PLAYWRIGHT_PATH` is any directory containing the `playwright` npm package; `CHROMIUM_PATH` is optional.
+
+```bash
+COPILOT_STATE=/tmp/e2e-reviews.sqlite3 COPILOT_GEMINI_ENABLED=0 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+PLAYWRIGHT_PATH=<node_modules dir> BASE_URL=http://127.0.0.1:3000 OUT=data/finals-shots node scripts/e2e_finals.mjs
+```
+
+It checks Overview, the work queue, three pinned briefs, reviews and agent scoping at desktop and phone width, and saves screenshots used by the finals deck.
+
 To regenerate released benchmark answers through the same engine used by `/api/ask`:
 
 ```bash
@@ -283,7 +306,7 @@ The organizer's 15 extra questions are included at `submission/benchmark_questio
 
 After checking results, commit and push the final revision, then run the same package command without `--check-only`. It creates `../deliverables/AddaWale-code-backup.zip` from committed files and records the commit and SHA-256 in a manifest. `--final` requires all 15 extra questions; a pre-release backup is interim. The check verifies format and coverage, not hidden-answer correctness.
 
-The nine-slide presentation is generated directly as PDF from the measured local reports:
+The prelim nine-slide presentation is generated directly as PDF from the measured local reports (the finals deck uses `scripts/generate_finals_deck.py`):
 
 ```bash
 .venv/bin/python scripts/generate_pitch_pdf.py
@@ -304,7 +327,8 @@ npm run build
 
 Current local verification:
 
-- **337 automated tests passed**, covering roles, hardship/hold priority and specific internal notes, metric dates/cohorts/groupings/province filters, C360 contract validation, feature parity, provider fallback/privacy, audio integrity/access/cache/queue controls and persistent reviews/audit.
+- **524 automated tests passed** (finals build), covering the ordered action plan and contact windows, work-queue tiers and scoping, pinned demo customers, 79 held-out question phrasings, roles, hardship/hold priority, metric dates/cohorts/groupings/province filters, C360 contract validation, feature parity, provider fallback/privacy, audio controls, concurrency and persistent reviews/audit.
+- **35/35 rendered-browser checks passed** at desktop and phone width (`scripts/e2e_finals.mjs`), with no console errors.
 - **23 C360 contract/product availability checks passed** on 1,014,631 rows without changing the database. Freshness, identity precision and governance approval are outside this check.
 - **50 benchmark rows generated** (35 original plus 15 extra), including nine refusals and no unresolved results.
 - **12/12 numeric development questions matched** organizer reference SQL within tolerance.
@@ -315,7 +339,7 @@ Current local verification:
 
 All 2,000 supplied audio files passed publisher checksum checks; 1,944 recordings have a verified linked C360 case. Three actual calls were transcribed locally; their shared cue vectors match the offline calculation, while the exploratory pooled word-error rate is 22.03%. This tiny sample is not a representative accuracy evaluation.
 
-These are local checks, not an organizer score. Correctness of the extra answers has been checked against their queries and source definitions, but no hidden-answer score is available. The rendered website still needs a browser walkthrough.
+These are local checks, not an organizer score. Correctness of the extra answers has been checked against their queries and source definitions, but no hidden-answer score is available.
 
 ## Repository guide
 
@@ -323,6 +347,8 @@ These are local checks, not an organizer score. Correctness of the extra answers
 |---|---|
 | `frontend/` | Next.js web application and frontend dependency lock file. |
 | `app/main.py` | FastAPI routes, authentication, customer access and review workflow. |
+| `app/action_plan.py` | Ordered, policy-cited next steps per customer: restrictions, representative, programmes, promise, contact window, payment ask. |
+| `app/work_queue.py`, `app/portfolio_checks.py` | Agent work-queue tiers and the portfolio-wide policy checks shown on Overview. |
 | `app/insights.py` | Question plans, policy retrieval, transcript evidence and refusals. |
 | `app/metric_plans.py` | Validated metric catalog and fixed SQL compiler used for local and Gemini plans. |
 | `app/runtime.py`, `app/gemini.py` | Shared API/benchmark pipeline and optional stateless provider adapter. |
@@ -332,8 +358,8 @@ These are local checks, not an organizer score. Correctness of the extra answers
 | `app/voice.py`, `app/voice_worker.py` | Verified audio, bounded local transcription and review-only cached cue evidence. |
 | `scripts/` | Dataset download, data preparation, model training, verification and benchmark export. |
 | `tests/` | Automated tests for access, question handling, review storage and features. |
-| `config/` | Customer 360 data contract describing the output and its rules. |
-| `docs/` | Architecture, data-quality/model reports, API contract and design reviews. |
+| `config/` | Customer 360 data contract and the statutory holiday calendar used for contact windows. |
+| `docs/` | Architecture, data-quality/model reports, API contract, finals demo and Q&A; prelim material in `docs/archive/`. |
 | `submission/` | Generated benchmark answers. |
 | `data/` | Local release, databases and trained model; ignored by Git. |
 
@@ -352,7 +378,9 @@ These are local checks, not an organizer score. Correctness of the extra answers
 - [Combined build plan](docs/archive/prelim/reviews/build-plan-review.md)
 - [Build status and remaining work](docs/archive/prelim/build-status.md)
 - [Final submission checklist](docs/archive/prelim/submission-checklist.md)
-- [Demo recording walkthrough](docs/archive/prelim/demo-walkthrough.md)
+- [Finals live demo script](docs/demo-walkthrough.md) and [judge Q&A preparation](docs/finals-judge-qa.md)
+- [Hardship detector evaluation](docs/hardship-detector-evaluation.md)
+- [Prelim recording walkthrough](docs/archive/prelim/demo-walkthrough.md)
 - [Historical design-phase document](docs/system-design.md)
 
 ## Scope and limitations
@@ -370,7 +398,7 @@ These are local checks, not an organizer score. Correctness of the extra answers
 | Broader C360 summary contract | Eight summary fields plus linked accounts, cases, notes and feature views. Consent aggregates, 30/90-day counts, per-customer DQ status and reviewed hardship status are not added to the summary. |
 | Voice and orchestration extensions | Provided transcript summaries plus optional verified audio playback and local Whisper speech-to-text. Generated cues require human inspection and do not change decisions; orchestration frameworks remain outside the build. |
 
-The application still requires supervisor approval for every brief. It does not initiate customer contact or make programme eligibility decisions automatically.
+The application still requires supervisor approval for every brief. It does not initiate customer contact or make programme eligibility decisions automatically: programme checks are suggestions for the named approver. Contact windows use a national statutory-holiday list (`config/statutory_holidays.csv`), not provincial-only holidays. Paydays are estimated from recorded pay frequency and salary credits, for about half of open cases; otherwise the plan tells the agent to ask.
 
 Customer matching is conservative: unresolved identities are excluded from linked accounts and counted in the quality report. The pipeline currently produces **1,014,631 golden customer records**; this is not a claim that it has perfectly recovered the release's underlying one million people. Source identifiers retain leading zeros, invalid typed values remain available in raw data, and only empty CSV fields become null. Portfolio totals include source cases with unresolved customer references, while C360 views contain linked cases, so their totals can differ.
 
@@ -378,7 +406,7 @@ The question planner supports defined metrics and policy topics rather than unre
 
 If the app reports that the dataset is not ready, finish `scripts/build_data.py`. If brief generation reports that the model is missing, stop the backend, run `scripts/train_model.py`, then restart it. If requests fail, check that the backend is running on port 8000 and the frontend on port 3000.
 
-The architecture and nine-slide presentation PDF are prepared. The user will record a **demo video of at most five minutes** using the walkthrough. The 50-question benchmark is complete. Browser rehearsal and accessible video upload remain. Invite **`cibchack26` by 17:00 IST** through the owner's GitHub collaborator settings; the owner confirmed the invitation appears in repository access; acceptance has not been independently checked. Keep the repository private. The final form allows **one submission per team**, requiring the repo link, code ZIP, accessible video link and presentation PDF. No form submission or external deployment has been performed. The build deadline is **4 October 2026 at 21:00 IST**; later commits are excluded.
+The prelim deliverables (architecture, nine-slide deck, benchmark CSV, video) were submitted on 4 October 2026 and are tagged `prelim-submission`. The finals deck is generated with `.venv/bin/python scripts/generate_finals_deck.py` after the tests, development validation, hardship evaluation and browser check have run; it refuses to export if any of them failed. The repository stays private; no external deployment has been performed.
 
 ## AI tool disclosure
 
