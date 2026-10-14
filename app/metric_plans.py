@@ -43,24 +43,24 @@ def _entry(description, groupings, time_basis, denominator, filters=PROVINCE_FIL
 
 
 CATALOG = {
-    "promise_kept_rate": _entry("Kept promises / resolved promises, by due date.", ["none", "queue", "product", "site", "channel"], "promise due date", "kept, partially_kept and broken promises"),
-    "broken_promise_rate": _entry("Broken promises / resolved promises, by due date.", ["none", "queue", "product", "site", "channel", "prior_broken"], "promise due date", "kept, partially_kept and broken promises"),
-    "rpc_rate": _entry("Right-party contacts / outbound call attempts.", ["none", "hour", "channel", "agent_site"], "contact date", "outbound calls"),
-    "ptp_rate": _entry("Promises recorded per right-party contact.", ["none", "channel", "agent_site"], "contact date", "right-party non-system contacts"),
-    "cost_per_contact": _entry("Contact costs / non-system contact records.", ["none", "channel", "agent_site"], "contact date", "non-system contact records"),
-    "cost_per_rpc": _entry("All non-system contact costs / right-party contacts.", ["none", "channel", "agent_site"], "contact date", "right-party non-system contacts"),
-    "hardship_rate": _entry("Share of cases with hardship recorded; not a reviewed determination.", ["none", "province", "product", "queue"], "case open date", "cases opened within period"),
-    "cure_rate": _entry("Cases open at period start that cure during the period.", ["none", "product", "province", "queue"], "calendar period", "cases open at start, excluding insolvency/deceased holds"),
-    "average_dpd": _entry("Mean recorded DPD among currently open cases.", ["none", "queue", "bucket", "product"], "snapshot", "open cases with nonmissing current DPD", snapshot_only=True),
-    "contact_attempts_per_case": _entry("Period outbound attempts / distinct cases receiving those attempts.", ["none", "bucket", "queue", "product"], "contact date", "distinct case IDs with outbound contacts in period"),
+    "promise_kept_rate": _entry("Kept promises / resolved promises, by due date.", ["none", "queue", "product", "site", "channel", "province", "month"], "promise due date", "kept, partially_kept and broken promises"),
+    "broken_promise_rate": _entry("Broken promises / resolved promises, by due date.", ["none", "queue", "product", "site", "channel", "prior_broken", "province", "month"], "promise due date", "kept, partially_kept and broken promises"),
+    "rpc_rate": _entry("Right-party contacts / outbound call attempts.", ["none", "hour", "channel", "agent_site", "province", "month"], "contact date", "outbound calls"),
+    "ptp_rate": _entry("Promises recorded per right-party contact.", ["none", "channel", "agent_site", "province", "month"], "contact date", "right-party non-system contacts"),
+    "cost_per_contact": _entry("Contact costs / non-system contact records.", ["none", "channel", "agent_site", "province", "month"], "contact date", "non-system contact records"),
+    "cost_per_rpc": _entry("All non-system contact costs / right-party contacts.", ["none", "channel", "agent_site", "province", "month"], "contact date", "right-party non-system contacts"),
+    "hardship_rate": _entry("Share of cases with hardship recorded; not a reviewed determination.", ["none", "province", "product", "queue", "month"], "case open date", "cases opened within period"),
+    "cure_rate": _entry("Cases open at period start that cure during the period.", ["none", "product", "province", "queue", "month"], "calendar period", "cases open at start, excluding insolvency/deceased holds"),
+    "average_dpd": _entry("Mean recorded DPD among currently open cases.", ["none", "queue", "bucket", "product", "province"], "snapshot", "open cases with nonmissing current DPD", snapshot_only=True),
+    "contact_attempts_per_case": _entry("Period outbound attempts / distinct cases receiving those attempts.", ["none", "bucket", "queue", "product", "province", "month"], "contact date", "distinct case IDs with outbound contacts in period"),
     "delinquency_rate": _entry("Card accounts 1+ DPD / active or blocked cards with known DPD.", ["none", "product", "bucket"], "snapshot", "active/blocked card accounts with nonmissing DPD", filters=NO_FILTER, snapshot_only=True, scope="cards only; lending has no authoritative active-status field"),
     "write_off_rate": _entry("Accounts charged off in period / accounts in the extract register.", ["none", "product"], "charge-off date", "all extracted card and loan account records; not period-start balances", filters=NO_FILTER),
-    "open_cases": _entry("Currently open cases (no recorded outcome).", ["none", "queue", "bucket", "product"], "snapshot", "source-wide collections cases", snapshot_only=True, extension=True),
-    "open_overdue_amount": _entry("Total recorded overdue CAD on currently open cases.", ["none", "queue", "product"], "snapshot", "open cases with recorded total_overdue", snapshot_only=True, extension=True),
-    "open_hardship_cases": _entry("Count currently open cases with a recorded hardship flag.", ["none", "queue", "product"], "snapshot", "open cases with hardship_flag=true; not reviewed eligibility", snapshot_only=True, extension=True),
-    "open_insolvency_cases": _entry("Count and overdue CAD on currently open cases with insolvency hold.", ["none", "queue", "product"], "snapshot", "open cases with insolvency_hold_flag=true", snapshot_only=True, extension=True),
-    "average_days_to_cure": _entry("Mean recorded days from case opening to cure among cases curing in period.", ["none", "queue", "product"], "cure date", "cure_flag=true and cure_date in period; average excludes missing days_to_cure", extension=True),
-    "sms_payment_link_click_share": _entry("Clicked payment-link SMS send events / outbound SMS send events with a payment_link_id.", ["none"], "SMS send contact date", "outbound SMS contact rows with non-null payment_link_id; repeated sends count separately", filters=NO_FILTER, extension=True),
+    "open_cases": _entry("Currently open cases (no recorded outcome).", ["none", "queue", "bucket", "product", "province"], "snapshot", "source-wide collections cases", snapshot_only=True, extension=True),
+    "open_overdue_amount": _entry("Total recorded overdue CAD on currently open cases.", ["none", "queue", "product", "province"], "snapshot", "open cases with recorded total_overdue", snapshot_only=True, extension=True),
+    "open_hardship_cases": _entry("Count currently open cases with a recorded hardship flag.", ["none", "queue", "product", "province"], "snapshot", "open cases with hardship_flag=true; not reviewed eligibility", snapshot_only=True, extension=True),
+    "open_insolvency_cases": _entry("Count and overdue CAD on currently open cases with insolvency hold.", ["none", "queue", "product", "province"], "snapshot", "open cases with insolvency_hold_flag=true", snapshot_only=True, extension=True),
+    "average_days_to_cure": _entry("Mean recorded days from case opening to cure among cases curing in period.", ["none", "queue", "product", "province", "month"], "cure date", "cure_flag=true and cure_date in period; average excludes missing days_to_cure", extension=True),
+    "sms_payment_link_click_share": _entry("Clicked payment-link SMS send events / outbound SMS send events with a payment_link_id.", ["none", "month"], "SMS send contact date", "outbound SMS contact rows with non-null payment_link_id; repeated sends count separately", filters=NO_FILTER, extension=True),
 }
 
 _ALLOWED = {"metric_id", "grouping", "start_date", "end_date", "filters", "clarification", "refuse", "refuse_reason"}
@@ -139,9 +139,9 @@ def compile_plan(spec: dict) -> CompiledPlan:
     note = "Dates use an inclusive start and exclusive end. Source-wide curated records are used."
     case_groups = {"none": None, "queue": ("coalesce(c.queue,'unknown')", "queue"), "bucket": ("coalesce(c.current_bucket,'unknown')", "current_bucket"), "product": ("coalesce(c.primary_product,'unknown')", "primary_product"), "province": ("coalesce(c.province_code,'unknown')", "province_code")}
     if metric in ("promise_kept_rate", "broken_promise_rate"):
-        groups = {"none": None, "queue": ("coalesce(c.queue,'unknown')", "queue"), "product": ("coalesce(p.product,'unknown')", "product"), "site": ("CASE WHEN p.agent_id IS NULL THEN 'self_serve' ELSE coalesce(a.site,'unknown') END", "site"), "channel": ("coalesce(p.ptp_channel,'unknown')", "ptp_channel"), "prior_broken": ("least(p.prior_broken_ptp_count,3)", "prior_broken")}
-        joins = " LEFT JOIN curated.collections_cases c USING(case_id)" if grouping == "queue" else " LEFT JOIN curated.agents a USING(agent_id)" if grouping == "site" else ""
-        if province and grouping != "queue": joins += " LEFT JOIN curated.collections_cases c ON c.case_id=p.case_id"
+        groups = {"none": None, "queue": ("coalesce(c.queue,'unknown')", "queue"), "product": ("coalesce(p.product,'unknown')", "product"), "site": ("CASE WHEN p.agent_id IS NULL THEN 'self_serve' ELSE coalesce(a.site,'unknown') END", "site"), "channel": ("coalesce(p.ptp_channel,'unknown')", "ptp_channel"), "prior_broken": ("least(p.prior_broken_ptp_count,3)", "prior_broken"), "province": case_groups["province"], "month": ("strftime(p.ptp_due_date,'%Y-%m')", "month")}
+        joins = " LEFT JOIN curated.collections_cases c USING(case_id)" if grouping in ("queue", "province") else " LEFT JOIN curated.agents a USING(agent_id)" if grouping == "site" else ""
+        if province and grouping not in ("queue", "province"): joins += " LEFT JOIN curated.collections_cases c ON c.case_id=p.case_id"
         status = "kept" if metric == "promise_kept_rate" else "broken"
         alias = "promise_kept_rate_pct" if status == "kept" else "broken_rate_pct"
         sql = _select(groups[grouping], f"round(100.0*sum(CASE WHEN p.ptp_status='{status}' THEN 1 ELSE 0 END)/nullif(count(*),0),1) {alias}", "count(*) resolved_promises", "curated.promises_to_pay p" + joins, f"p.ptp_due_date>=? AND p.ptp_due_date<? AND p.ptp_status IN {RESOLVED}" + region)
@@ -149,9 +149,9 @@ def compile_plan(spec: dict) -> CompiledPlan:
         if grouping == "prior_broken": note += " prior_broken=3 denotes three or more; null remains unknown."
         if grouping == "channel": note += " Channel is where the promise was taken (ptp_channel), not a joined contact channel."
     elif metric in ("rpc_rate", "ptp_rate", "cost_per_contact", "cost_per_rpc"):
-        groups = {"none": None, "hour": ("h.contact_hour_local", "contact_hour_local"), "channel": (CHANNEL, "channel"), "agent_site": ("CASE WHEN h.agent_id IS NULL THEN 'self_serve' ELSE coalesce(a.site,'unknown') END", "agent_site")}
+        groups = {"none": None, "hour": ("h.contact_hour_local", "contact_hour_local"), "channel": (CHANNEL, "channel"), "agent_site": ("CASE WHEN h.agent_id IS NULL THEN 'self_serve' ELSE coalesce(a.site,'unknown') END", "agent_site"), "province": case_groups["province"], "month": ("strftime(h.contact_ts_local,'%Y-%m')", "month")}
         joins = " LEFT JOIN curated.agents a USING(agent_id)" if grouping == "agent_site" else ""
-        if province: joins += " LEFT JOIN curated.collections_cases c ON c.case_id=h.case_id"
+        if province or grouping == "province": joins += " LEFT JOIN curated.collections_cases c ON c.case_id=h.case_id"
         where = f"{CHANNEL}!='system' AND h.contact_ts_local>=? AND h.contact_ts_local<?"
         if metric == "rpc_rate":
             where += f" AND {CHANNEL}='call' AND h.direction='outbound'"
@@ -198,13 +198,22 @@ def compile_plan(spec: dict) -> CompiledPlan:
             expr, count, where = "count(*) open_cases", None, "c.outcome IS NULL"
             params = []
             note = f"Open means no recorded outcome at {SNAPSHOT}. Source bucket labels are retained; discrepancies are reported in data quality."
-        sql = _select(case_groups[grouping], expr, count, "curated.collections_cases c", where + region)
+        month = {"hardship_rate": "c.case_open_date", "average_days_to_cure": "c.cure_date"}.get(metric)
+        sql = _select((f"strftime({month},'%Y-%m')", "month") if grouping == "month" else case_groups[grouping], expr, count, "curated.collections_cases c", where + region)
+        if metric == "cure_rate" and grouping == "month":
+            # Each month keeps its own open-at-start cohort; the last month ends at the period end.
+            sql = ("WITH months AS (SELECT cast(m AS DATE) month_start, least(cast(m + INTERVAL 1 MONTH AS DATE), ?) month_end FROM range(cast(? AS TIMESTAMP), cast(? AS TIMESTAMP), INTERVAL 1 MONTH) t(m)) "
+                   "SELECT strftime(m.month_start,'%Y-%m') AS month, round(100.0*sum(CASE WHEN c.cure_date>=m.month_start AND c.cure_date<m.month_end THEN 1 ELSE 0 END)/nullif(count(*),0),2) cure_rate_pct, count(*) cases_open_at_start "
+                   "FROM months m JOIN curated.collections_cases c ON c.case_open_date<m.month_start AND (c.outcome_date>=m.month_start OR c.outcome IS NULL) "
+                   "WHERE NOT coalesce(c.insolvency_hold_flag,false) AND NOT coalesce(c.deceased_hold_flag,false)" + region + " GROUP BY 1 ORDER BY 1")
+            params = [end, start, end]
     elif metric == "sms_payment_link_click_share":
-        sql = _select(None, "round(100.0*sum(CASE WHEN h.link_clicked_flag THEN 1 ELSE 0 END)/nullif(count(*),0),2) sms_payment_link_clicked_pct", "count(*) payment_link_sms_sent, sum(CASE WHEN h.link_clicked_flag THEN 1 ELSE 0 END) clicked_sms", "curated.contact_history h", f"{CHANNEL}='sms' AND h.direction='outbound' AND h.payment_link_id IS NOT NULL AND h.contact_ts_local>=? AND h.contact_ts_local<?")
+        sql = _select(("strftime(h.contact_ts_local,'%Y-%m')", "month") if grouping == "month" else None, "round(100.0*sum(CASE WHEN h.link_clicked_flag THEN 1 ELSE 0 END)/nullif(count(*),0),2) sms_payment_link_clicked_pct", "count(*) payment_link_sms_sent, sum(CASE WHEN h.link_clicked_flag THEN 1 ELSE 0 END) clicked_sms", "curated.contact_history h", f"{CHANNEL}='sms' AND h.direction='outbound' AND h.payment_link_id IS NOT NULL AND h.contact_ts_local>=? AND h.contact_ts_local<?")
         note += " The cohort is SMS send events with a payment link, not all SMS or distinct link IDs; repeated sends count separately. Missing click flags count as not clicked. Click flags reflect the extract snapshot, rather than clicks occurring only inside the send-date period."
     elif metric == "contact_attempts_per_case":
-        joins = " LEFT JOIN curated.collections_cases c USING(case_id)" if grouping != "none" else " LEFT JOIN curated.collections_cases c ON c.case_id=h.case_id" if province else ""
-        sql = _select(case_groups[grouping], "round(count(*)*1.0/nullif(count(DISTINCT h.case_id),0),2) attempts_per_case", "count(DISTINCT h.case_id) contacted_cases, count(*) outbound_attempts", "curated.contact_history h" + joins, "h.direction='outbound' AND h.contact_ts_local>=? AND h.contact_ts_local<? AND h.case_id IS NOT NULL" + region)
+        joins = " LEFT JOIN curated.collections_cases c USING(case_id)" if grouping not in ("none", "month") else " LEFT JOIN curated.collections_cases c ON c.case_id=h.case_id" if province else ""
+        groups = {**case_groups, "month": ("strftime(h.contact_ts_local,'%Y-%m')", "month")}
+        sql = _select(groups[grouping], "round(count(*)*1.0/nullif(count(DISTINCT h.case_id),0),2) attempts_per_case", "count(DISTINCT h.case_id) contacted_cases, count(*) outbound_attempts", "curated.contact_history h" + joins, "h.direction='outbound' AND h.contact_ts_local>=? AND h.contact_ts_local<? AND h.case_id IS NOT NULL" + region)
         note += " The denominator contains cases with outbound records in this period, including recorded outbound system events, as the certified metric specifies outbound only. This is not the separate all-open-case lifetime-attempts measure."
     elif metric == "delinquency_rate":
         groups = {"none": None, "product": ("a.product_code", "product_code"), "bucket": ("a.dpd_bucket", "dpd_bucket")}
@@ -218,6 +227,8 @@ def compile_plan(spec: dict) -> CompiledPlan:
         note += " Denominator is the full extracted account register, including closed accounts; not a historical period-start account inventory or annualized rate."
     else:  # Catalog additions require an explicit reviewed compiler branch.
         raise PlanError("This catalog metric has no reviewed SQL compiler.")
+    if grouping == "month":
+        note += " Months (YYYY-MM) follow the metric's own time basis; edge months cover only the part inside the period."
     definition = "schema/schema.json; reviewed application extension" if CATALOG[metric].get("extension") else "data/metric_definitions.csv"
     metadata = {"metric_id": metric, "grouping": grouping, "start_date": start.isoformat(), "end_date": end.isoformat(), "definition_source": definition, "denominator": CATALOG[metric]["denominator"]}
     if province:

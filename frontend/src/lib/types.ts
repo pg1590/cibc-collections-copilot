@@ -73,6 +73,10 @@ export interface CustomerDetail {
 
 export interface AskResponse {
   answer: string;
+  /** One plain-English sentence computed from the returned rows, refusal or clarification. */
+  summary?: string;
+  /** Closest questions the engine can answer, offered with a clarification. */
+  suggestions?: string[];
   explanation?: string;
   sql_or_sources: string;
   refused: boolean;

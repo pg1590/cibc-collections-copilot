@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Code2, Loader2, OctagonX, Send } from "lucide-react";
+import { ChevronDown, Code2, CornerDownRight, Loader2, OctagonX, Send } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { RecordTable } from "@/components/record-table";
 import { RichText } from "@/components/rich-text";
@@ -32,7 +32,7 @@ function evidenceMarkdown(text: string) {
   );
 }
 
-function AnswerCard({ question, result }: Exchange) {
+function AnswerCard({ question, result, onAsk, pending }: Exchange & { onAsk: (question: string) => void; pending: boolean }) {
   const calculationDetails = result.plan
     ? [
         { label: "Measure", value: result.plan.metric_id },
@@ -48,6 +48,11 @@ function AnswerCard({ question, result }: Exchange) {
         <CardTitle className="text-[1.05rem] leading-snug font-medium">{question}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
+        {result.summary && (
+          <p className="text-[1.1rem] leading-snug font-semibold" aria-label="Answer summary">
+            {result.summary}
+          </p>
+        )}
         {result.generation && (
           <p className="text-muted-foreground text-sm">
             {result.generation.status === "generated" && result.generation.provider.toLowerCase() === "gemini"
@@ -68,6 +73,27 @@ function AnswerCard({ question, result }: Exchange) {
           </Alert>
         ) : (
           <RichText text={result.answer} className="text-[1.05rem] leading-relaxed" />
+        )}
+
+        {!!result.suggestions?.length && (
+          <section aria-label="Suggested questions" className="space-y-2">
+            <h3 className="text-sm font-medium">Questions I can answer instead</h3>
+            <div className="flex flex-wrap gap-2">
+              {result.suggestions.map((suggestion) => (
+                <Button
+                  key={suggestion}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-auto py-1.5 text-left whitespace-normal"
+                  disabled={pending}
+                  onClick={() => onAsk(suggestion)}
+                >
+                  <CornerDownRight aria-hidden /> {suggestion}
+                </Button>
+              ))}
+            </div>
+          </section>
         )}
 
         {!result.refused && result.explanation && (
@@ -137,15 +163,15 @@ export default function AskPage() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<Exchange[]>([]);
 
-  async function submit() {
-    const text = question.trim();
+  async function submit(asked?: string) {
+    const text = (asked ?? question).trim();
     if (!text || pending) return;
     setPending(true);
     setError(null);
     try {
       const result = await api<AskResponse>("/ask", { method: "POST", body: JSON.stringify({ question: text }) });
       setHistory((h) => [{ question: text, result }, ...h]);
-      setQuestion("");
+      if (asked === undefined) setQuestion("");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -196,7 +222,7 @@ export default function AskPage() {
         <div aria-live="polite" className="space-y-6">
           {error && <ErrorState title="The question could not be answered" message={error} />}
           {history.map((exchange, i) => (
-            <AnswerCard key={history.length - i} {...exchange} />
+            <AnswerCard key={history.length - i} {...exchange} onAsk={(text) => void submit(text)} pending={pending} />
           ))}
           {!history.length && !error && (
             <p className="text-muted-foreground text-sm">Answers appear here while you stay on this page. They are not stored.</p>
