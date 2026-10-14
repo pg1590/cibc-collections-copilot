@@ -7,6 +7,7 @@ import math
 import re
 import time
 from dataclasses import dataclass
+from functools import lru_cache
 from datetime import date,timedelta
 from pathlib import Path
 
@@ -19,6 +20,20 @@ from app.policy_summary import STOP, summarize_policy, summarize_transcript
 from app.features import normalize_text
 
 ASOF=date.fromisoformat(SNAPSHOT)
+_LAST=ASOF.replace(day=1)-timedelta(days=1)
+LAST_MONTH=f'{calendar.month_name[_LAST.month]} {_LAST.year}'  # last complete month before the snapshot, for examples
+
+
+@lru_cache(maxsize=1)
+def monthly_snapshot_end():
+    """Last month-end covered by account_monthly_snapshot in this release."""
+    try:
+        from app.settings import DB
+        with duckdb.connect(str(DB),read_only=True) as c:
+            found=c.execute('SELECT max(snapshot_date) FROM curated.account_monthly_snapshot').fetchone()[0]
+        return found if isinstance(found,date) else found.date()
+    except Exception:
+        return date(2026,6,30)
 MONTHS={m.lower():i for i,m in enumerate(calendar.month_name) if m}
 MONTHS.update({m.lower():i for i,m in enumerate(calendar.month_abbr) if m})
 MONTHS.update({'janvier':1,'fevrier':2,'mars':3,'avril':4,'mai':5,'juin':6,'juillet':7,'aout':8,'septembre':9,'octobre':10,'novembre':11,'decembre':12})
@@ -288,7 +303,7 @@ def ranking(q):
         else:
             found=requested_dimensions(pq)
             if not found and word and detect_metric(q,strict=False) and re.search(r'\b(?:queue|bucket|province|product|channel|site)s?\b',pq):
-                raise PlanError('Please say which grouping to rank, for example "Which queue has the highest cure rate in August 2026?"')
+                raise PlanError(f'Please say which grouping to rank, for example "Which queue has the highest cure rate in {LAST_MONTH}?"')
             if not found:return None
             if len(found)!=1:raise PlanError('Rankings use one grouping at a time: province, queue, product, bucket, channel, site, hour or month.')
             dimension=found[0]
@@ -551,7 +566,7 @@ PROGRAMME_PRODUCTS=[(r'credit cards?|\bcards?\b',['card']),(r'personal loans?',[
 PRODUCT_LABELS={'card':'cards','personal_loan':'personal loans','auto_loan':'auto loans','loc':'lines of credit','mortgage':'mortgages','overdraft':'overdrafts'}
 WORK_QUEUE=r'\b(?:which|what)\s+(?:\w+\s+)?(?:customers|accounts|cases|clients|borrowers|debtors)\b.*\b(?:call|contact|phone|prioriti[sz]\w*|chase|work|reach)\w*\b|\bwho\s+(?:should|do|must|to)\s+(?:we\s+|i\s+)?(?:call|contact|prioriti[sz]e|chase|phone|work)\b|(?<!not )\b(?:call|contact|work)\s+(?:list|order)\b'
 WORK_QUEUE_SUGGESTIONS=['How many open cases are there by bucket?','How many open cases have recorded hardship by queue?','What is the average days past due of open cases by queue?']
-DEFAULT_SUGGESTIONS=['What was the promise-kept rate in August 2026 by queue?','Which province has the highest cure rate in August 2026?','How many open cases are there by bucket?']
+DEFAULT_SUGGESTIONS=[f'What was the promise-kept rate in {LAST_MONTH} by queue?',f'Which province has the highest cure rate in {LAST_MONTH}?','How many open cases are there by bucket?']
 
 
 def programme_intent(q):
@@ -840,7 +855,8 @@ class InsightEngine:
             months=[MONTHS[m.group(0)] for m in re.finditer(r'\b('+('|'.join(sorted(MONTHS,key=len,reverse=True)))+r')\b',q)]
             if len(months)!=2:raise PlanError('Roll rate needs two explicit month-end snapshots and a starting DPD bucket.')
             first=date(start.year,months[0],calendar.monthrange(start.year,months[0])[1]);last=date(start.year,months[1],calendar.monthrange(start.year,months[1])[1])
-            if first>=last or last>date(2026,6,30):raise PlanError('Available monthly snapshots end on 30 June 2026. Choose two ordered month ends within that coverage.')
+            coverage=monthly_snapshot_end()
+            if first>=last or last>coverage:raise PlanError(f'Available monthly snapshots end on {coverage.day} {calendar.month_name[coverage.month]} {coverage.year}. Choose two ordered month ends within that coverage.')
             if not re.search(r'1\s*[-–]\s*30',q):raise PlanError('This roll-rate calculation supports accounts starting at 1–30 DPD. Please specify that cohort.')
             buckets=re.findall(r'\b(\d+)\s*[-–]\s*(\d+)\b',q)
             if any((a,b) not in [('1','30'),('31','60')] for a,b in buckets):raise PlanError('Supported roll destinations are any worse bucket, or specifically 31–60 DPD; other destinations need a reviewed cohort.')
@@ -963,7 +979,7 @@ class InsightEngine:
         if plan and not explicit_period(q):
             plan.note+=f' No period was supplied; this shows the last {TREND_DEFAULT_MONTHS} complete months ({_month(start.strftime("%Y-%m"))} to {_month((end-timedelta(days=1)).strftime("%Y-%m"))}).'
         elif plan and re.search(WINDOW,q):
-            plan.note+=f' "Last N months" means complete calendar months before the snapshot month; September 2026 (to {SNAPSHOT}) is excluded.'
+            plan.note+=f' "Last N months" means complete calendar months before the snapshot month; {calendar.month_name[ASOF.month]} {ASOF.year} (to {SNAPSHOT}) is excluded.'
         return plan
 
     def _programmes(self,q,result):

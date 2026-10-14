@@ -2,6 +2,7 @@
 import json
 import re
 import unicodedata
+from datetime import date, timedelta
 from pathlib import Path
 
 VERSION = "c360-financial-v2"
@@ -47,21 +48,24 @@ def evidence(text):
 def feature_sql(customer_filter=False):
     financial = ','.join(f"CAST(regexp_matches(lower(strip_accents(coalesce(n.note_text,''))),'{pattern.replace(chr(39), chr(39)*2)}') AS INTEGER) AS {name}" for name,pattern in PATTERNS.items())
     where = 'WHERE g.customer_id=?' if customer_filter else ''
+    from app.settings import SNAPSHOT
+    day = date.fromisoformat(SNAPSHOT)
+    week_start, next_day = day - timedelta(days=6), day + timedelta(days=1)
     return f"""WITH cases AS (
       SELECT customer_id,count(*) FILTER(WHERE outcome IS NULL) open_cases,
       coalesce(sum(total_overdue) FILTER(WHERE outcome IS NULL),0) total_overdue,
       max(current_dpd) FILTER(WHERE outcome IS NULL) max_dpd
-      FROM gold.cases WHERE case_open_date<=DATE '2026-09-28' GROUP BY 1
+      FROM gold.cases WHERE case_open_date<=DATE '{day}' GROUP BY 1
     ), promises AS (
       SELECT i.customer_id,count(*) FILTER(WHERE p.ptp_status IN ('kept','partially_kept','broken')) resolved_promises,
       count(*) FILTER(WHERE p.ptp_status='broken') broken_promises
       FROM curated.promises_to_pay p JOIN gold.crm_identity i USING(crm_customer_id)
-      WHERE p.status_ts<=TIMESTAMP '2026-09-28 23:59:59' GROUP BY 1
+      WHERE p.status_ts<TIMESTAMP '{next_day}' GROUP BY 1
     ), contacts AS (
       SELECT i.customer_id,count(*) contacts_7d FROM curated.contact_history h
       JOIN gold.crm_identity i USING(crm_customer_id)
       WHERE h.direction='outbound' AND coalesce(h.channel,h.channel_v2)!='system'
-       AND h.contact_ts_utc>=TIMESTAMP '2026-09-22' AND h.contact_ts_utc<TIMESTAMP '2026-09-29' GROUP BY 1
+       AND h.contact_ts_utc>=TIMESTAMP '{week_start}' AND h.contact_ts_utc<TIMESTAMP '{next_day}' GROUP BY 1
     ) SELECT g.customer_id,coalesce(c.open_cases,0) open_cases,coalesce(c.total_overdue,0) total_overdue,c.max_dpd,
       coalesce(p.resolved_promises,0) resolved_promises,coalesce(p.broken_promises,0) broken_promises,
       CASE WHEN p.resolved_promises>0 THEN p.broken_promises::DOUBLE/p.resolved_promises ELSE NULL END broken_promise_ratio,
@@ -76,7 +80,7 @@ def definitions():
         {'name':'total_overdue','definition':'Sum overdue on open cases (CAD)','source':'gold.cases','type':'number'},
         {'name':'max_dpd','definition':'Maximum days past due on open cases; null when no open case','source':'gold.cases','type':'integer'},
         {'name':'broken_promise_ratio','definition':'Broken / resolved promises, excludes open/cancelled; null for no resolved promise','source':'curated.promises_to_pay','type':'number'},
-        {'name':'contacts_7d','definition':'Outbound contacts from 22–28 Sep inclusive; system events excluded','source':'curated.contact_history','type':'integer'},
+        {'name':'contacts_7d','definition':'Outbound contacts in the 7 days ending on the snapshot date, inclusive; system events excluded','source':'curated.contact_history','type':'integer'},
     ] + [{'name':k,'definition':'Financial text cue: '+v,'source':'latest agent note before snapshot','type':'binary'} for k,v in PATTERNS.items()]
 
 

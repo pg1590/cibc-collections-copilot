@@ -13,6 +13,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import duckdb
 from rapidfuzz import fuzz
+from datetime import date, timedelta
+from app import snapshot as snapshot_detect
 from app.settings import DATASET, DB, QUALITY, ROOT, SNAPSHOT
 
 
@@ -234,9 +236,13 @@ def build(dataset=DATASET, db=DB, reload=False):
       UNION ALL SELECT x.customer_id,'core',a.deposit_account_id,a.src_customer_ref,a.product_type,a.current_balance,
        CASE WHEN a.overdraft_dpd>0 THEN a.overdraft_used ELSE 0 END,a.overdraft_dpd,a.overdraft_dpd_bucket,a.account_status,x.confidence
       FROM curated.deposit_accounts a JOIN gold.identity_crosswalk x ON x.source_system='core' AND a.src_customer_ref=x.source_key AND x.status='matched'""")
-    c.execute("""CREATE OR REPLACE TABLE gold.latest_notes AS
+    # The as-of point is read from this extract, so a new release needs no code change.
+    found = snapshot_detect.write(c, Path(db).with_name("snapshot.json"))
+    report["snapshot_date"] = found["snapshot_date"]
+    note_cutoff = date.fromisoformat(found["snapshot_date"]) + timedelta(days=1)
+    c.execute(f"""CREATE OR REPLACE TABLE gold.latest_notes AS
       SELECT i.customer_id,n.* FROM curated.agent_notes n JOIN gold.crm_identity i USING(crm_customer_id)
-      WHERE n.note_ts<=TIMESTAMP '2026-09-28 23:59:59'
+      WHERE n.note_ts<TIMESTAMP '{note_cutoff}'
       QUALIFY row_number() OVER(PARTITION BY i.customer_id ORDER BY n.note_ts DESC,n.note_id DESC)=1""")
     c.execute("""CREATE OR REPLACE TABLE gold.customer_summary AS
       WITH cases AS(SELECT customer_id,count(*) FILTER(WHERE outcome IS NULL) open_cases,

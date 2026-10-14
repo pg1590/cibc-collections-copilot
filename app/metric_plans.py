@@ -111,7 +111,7 @@ def _validate(spec):
     start = _iso(spec.get("start_date"), "start_date")
     end = _iso(spec.get("end_date"), "end_date")
     if start >= end or end > ASOF + timedelta(days=1):
-        raise PlanError("Use a nonempty, end-exclusive period ending no later than 2026-09-29.")
+        raise PlanError(f"Use a nonempty, end-exclusive period ending no later than {ASOF + timedelta(days=1)}.")
     if CATALOG[metric].get("snapshot_only"):
         if start != ASOF or end != ASOF + timedelta(days=1):
             raise PlanError(f"This metric supports only the {SNAPSHOT} snapshot, not historical reconstruction.")

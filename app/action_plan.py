@@ -1,37 +1,68 @@
 """Ordered, policy-cited next steps for one customer. Rules only; no model output
 changes a step. Every step names the source record and the policy it follows."""
 import calendar
-import csv
 import json
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from app.settings import ROOT, SNAPSHOT
+from app import holidays as statutory
+from app.settings import AS_OF, SNAPSHOT
 
-# Contact history ends 2026-09-28 06:56 UTC; plans start from the next business day.
-AS_OF = datetime(2026, 9, 28, 7, 0, tzinfo=timezone.utc)
-CAP_7D = 3
+DEFAULT_CAP_7D = 3  # POL-COLL-001 §5.2; a case's own contact_cap_7d takes precedence
 HORIZON_DAYS = 21
 MIN_SLOT = timedelta(minutes=15)  # shorter windows are not usable by an agent
 PTP_MAX_DAYS = 21
 ATTEMPT_CHANNELS = ('call', 'sms', 'email', 'push')
-POLICY = {
-    'hold': 'POL-COLL-001 v3.0 §7.3', 'cease': 'POL-COLL-001 v3.0 §5.4', 'rep': 'POL-COLL-001 v3.0 §5.4',
-    'hours': 'POL-COLL-001 v3.0 §5.1', 'cap': 'POL-COLL-001 v3.0 §5.2', 'consent': 'POL-COLL-001 v3.0 §5.3',
-    'language': 'POL-COLL-001 v3.0 §5.5', 'hardship': 'POL-COLL-004 v4.2 §4.2', 'evidence': 'POL-COLL-004 v4.2 §4.3',
-    'specialist': 'POL-COLL-004 v4.2 §4.4', 'vulnerable': 'POL-COLL-004 v4.2 §4.5', 'ptp': 'PRC-COLL-010 v2.1 §3.1',
-    'ptp_confirm': 'PRC-COLL-010 v2.1 §3.2', 'ptp_grace': 'PRC-COLL-010 v2.1 §3.3', 'dispute': 'PRC-COLL-012 v1.4 §6.1',
-    'complaint': 'POL-COLL-007 v2.0 §8.1', 'terms': 'HPT-2026 v2026.1',
+# Section numbers are fixed by the policies; versions come from reference_documents, so a
+# new release cites its own current versions.
+SECTIONS = {
+    'hold': ('POL-COLL-001', '§7.3'), 'cease': ('POL-COLL-001', '§5.4'), 'rep': ('POL-COLL-001', '§5.4'),
+    'hours': ('POL-COLL-001', '§5.1'), 'cap': ('POL-COLL-001', '§5.2'), 'consent': ('POL-COLL-001', '§5.3'),
+    'language': ('POL-COLL-001', '§5.5'), 'hardship': ('POL-COLL-004', '§4.2'), 'evidence': ('POL-COLL-004', '§4.3'),
+    'specialist': ('POL-COLL-004', '§4.4'), 'vulnerable': ('POL-COLL-004', '§4.5'), 'ptp': ('PRC-COLL-010', '§3.1'),
+    'ptp_confirm': ('PRC-COLL-010', '§3.2'), 'ptp_grace': ('PRC-COLL-010', '§3.3'), 'dispute': ('PRC-COLL-012', '§6.1'),
+    'complaint': ('POL-COLL-007', '§8.1'), 'terms': ('HPT', ''),
 }
+DEFAULT_VERSIONS = {'POL-COLL-001': '3.0', 'POL-COLL-004': '4.2', 'PRC-COLL-010': '2.1', 'PRC-COLL-012': '1.4',
+                    'POL-COLL-007': '2.0', 'HPT': ('HPT-2026', '2026.1')}
+POLICY = {}
 LEVELS = {'none': 0, 'possible': 1, 'clear': 2}
 # Latest start / earliest end that is 07:00-21:00 everywhere from St. John's to Vancouver.
 FALLBACK_TZ = 'America/Vancouver'
 FALLBACK_HOURS = ('07:00', '16:30')
 
 
-def holidays():
-    with (ROOT / 'config/statutory_holidays.csv').open(encoding='utf-8') as f:
-        return {date.fromisoformat(r['date']): r['name'] for r in csv.DictReader(f)}
+def use_document_versions(versions):
+    """versions: {doc_id: version} for current English documents; HPT-* resolves to the latest terms."""
+    terms = max((d for d in versions if d.startswith('HPT-')), default=None)
+    for key, (doc, section) in SECTIONS.items():
+        if doc == 'HPT':
+            name, version = (terms, versions[terms]) if terms else DEFAULT_VERSIONS['HPT']
+            POLICY[key] = f'{name} v{version}'
+        else:
+            POLICY[key] = f"{doc} v{versions.get(doc, DEFAULT_VERSIONS[doc])} {section}"
+
+
+use_document_versions({})
+_versions_loaded = False
+
+
+def _load_versions(c, as_of_date):
+    global _versions_loaded
+    if _versions_loaded:
+        return
+    try:
+        rows = c.execute("SELECT doc_id, version FROM curated.reference_documents "
+                         "WHERE superseded_by IS NULL AND effective_date<=? AND language='EN'", [as_of_date]).fetchall()
+        use_document_versions(dict(rows))
+    except Exception:  # older or partial releases: keep the reviewed defaults
+        pass
+    _versions_loaded = True
+
+
+def holidays(start=None, days=HORIZON_DAYS + 7):
+    start = start or AS_OF.date()
+    return statutory.between(start - timedelta(days=7), start + timedelta(days=days))
 
 
 def _clock(value, default):
@@ -61,9 +92,11 @@ def _add_months(d, n):
     return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
 
 
-def contact_window(attempts, tz_name, start, end, sunday_ok, holiday_names, as_of=AS_OF, cap=CAP_7D, horizon=HORIZON_DAYS):
+def contact_window(attempts, tz_name, start, end, sunday_ok, holiday_names, as_of=None, cap=DEFAULT_CAP_7D, horizon=HORIZON_DAYS):
     """Earliest instant contact is allowed: customer-local hours, Sundays, holidays,
     and the rolling 7-day attempt cap (POL-COLL-001 §5.1-5.2)."""
+    as_of = as_of or AS_OF
+    cap = int(cap or DEFAULT_CAP_7D)
     known_tz = bool(tz_name)
     tz = ZoneInfo(tz_name or FALLBACK_TZ)
     if not known_tz:
@@ -91,7 +124,7 @@ def contact_window(attempts, tz_name, start, end, sunday_ok, holiday_names, as_o
         if len(window) >= cap:
             t = max(t, window[len(window) - cap] + timedelta(days=7))
         if t + MIN_SLOT > closes:
-            reason = 'already 3 attempts in the last 7 days' if len(window) >= cap else 'outside permitted hours'
+            reason = f'already {cap} attempts in the last 7 days' if len(window) >= cap else 'outside permitted hours'
             if not (skipped and skipped[-1]['date'] == d.isoformat()):
                 skipped.append({'date': d.isoformat(), 'reason': reason})
             continue
@@ -186,9 +219,11 @@ def _step(steps, key, status, title, detail, policy=(), evidence=()):
                   'policy': [POLICY[p] if p in POLICY else p for p in policy], 'evidence': list(evidence)})
 
 
-def build(ctx, hardship_status, as_of=AS_OF, holiday_names=None):
+def build(ctx, hardship_status, as_of=None, holiday_names=None):
     """Pure rule evaluation over a loaded context; see load() for the source fields."""
-    holiday_names = holidays() if holiday_names is None else holiday_names
+    as_of = as_of or AS_OF
+    holiday_names = holidays(as_of.date()) if holiday_names is None else holiday_names
+    cap = int(case_cap) if (case_cap := ctx['case'].get('contact_cap_7d')) else DEFAULT_CAP_7D
     cust, case, steps = ctx['customer'], ctx['case'], []
     as_of_date = as_of.date()
     case_ref = f"collections_cases:{case['case_id']}"
@@ -213,7 +248,7 @@ def build(ctx, hardship_status, as_of=AS_OF, holiday_names=None):
             _step(steps, 'representative', 'action', 'Route any communication through the Licensed Insolvency Trustee',
                   f"Trustee on record: {cust['licensed_insolvency_trustee_name'].rstrip('.')}. Debt details are never disclosed to other third parties.",
                   ['rep', 'hold'], [cust_ref])
-        return _finish(steps, ctx, None, [], None)
+        return _finish(steps, ctx, None, [], None, as_of)
 
     # 2. Representative: every later step is carried out with the representative.
     rep = None
@@ -287,7 +322,7 @@ def build(ctx, hardship_status, as_of=AS_OF, holiday_names=None):
     ptp = ctx.get('promise')
     promise_pending = False
     window = contact_window(ctx['attempts'], cust.get('time_zone'), cust.get('permitted_call_start_local'),
-                            cust.get('permitted_call_end_local'), cust.get('sunday_contact_permitted'), holiday_names, as_of)
+                            cust.get('permitted_call_end_local'), cust.get('sunday_contact_permitted'), holiday_names, as_of, cap)
     if ptp and ptp.get('ptp_due_date'):
         due = ptp['ptp_due_date']
         grace_end = due + timedelta(days=2 + (2 if due.weekday() >= 3 else 0))
@@ -298,7 +333,7 @@ def build(ctx, hardship_status, as_of=AS_OF, holiday_names=None):
             _step(steps, 'promise', 'action' if in_time else 'wait',
                   f"Their promised payment is due {_day(due)}, so send a reminder; don't ask for more money yet",
                   f"Promise {ptp['ptp_id']}: {_money(ptp.get('ptp_amount'))} due {due}. " +
-                  ((f'Send it today, {window["day"]}, before the payment is due.' if slot == due.isoformat() else f'Send it between {window["day"]} and {_day(due - timedelta(days=1))}.') + ' A payment reminder counts as 1 of the 3 attempts in 7 days.' if in_time
+                  ((f'Send it today, {window["day"]}, before the payment is due.' if slot == due.isoformat() else f'Send it between {window["day"]} and {_day(due - timedelta(days=1))}.') + f' A payment reminder counts as 1 of the {cap} attempts in 7 days.' if in_time
                    else 'No allowed contact slot before the due date; do not chase. Check for payment after the 2-business-day grace period.'),
                   ['ptp_confirm', 'cap'], [f"promises_to_pay:{ptp['ptp_id']}"])
         elif as_of_date <= grace_end:
@@ -326,7 +361,7 @@ def build(ctx, hardship_status, as_of=AS_OF, holiday_names=None):
         tz_note = '' if window['time_zone_known'] else ' Time zone missing: hours narrowed to a window that is legal across Canada.'
         skip = ''.join(f" Not {_day(date.fromisoformat(s['date']))}: {s['reason']}." for s in window['skipped'][:3])
         title = f"You can contact them {window['day']} between {window['from_local']} and {window['until_local']} their time"
-        detail = (f"{window['attempts_last_7d']} of {CAP_7D} attempts used in the last 7 days.{skip} Channels with consent: "
+        detail = (f"{window['attempts_last_7d']} of {cap} attempts used in the last 7 days.{skip} Channels with consent: "
                   f"{', '.join(channels) or 'none'}." + (' ' + '; '.join(blocked) + '.' if blocked else '') +
                   (' Contact in French (Montréal site).' if french else '') + tz_note +
                   (' All contact goes to the representative.' if rep else ''))
@@ -358,21 +393,21 @@ def build(ctx, hardship_status, as_of=AS_OF, holiday_names=None):
                   f' {when} Read back the amount and date and offer a payment link.')
         _step(steps, 'payment_ask', 'action', 'Ask for the payment, timed to their payday', detail, ['ptp', 'ptp_confirm'] + (['vulnerable'] if vulnerable else []),
               [case_ref] + ([f"salary_credit_history:{cust.get('crm_customer_id')}"] if target else []))
-    return _finish(steps, ctx, window, offers, payday)
+    return _finish(steps, ctx, window, offers, payday, as_of)
 
 
-def _finish(steps, ctx, window, offers, payday):
+def _finish(steps, ctx, window, offers, payday, as_of):
     # The headline is the task; the contact window only says when it may happen.
     first = next((s for s in steps if s['status'] in ('stop', 'action', 'wait') and s['key'] != 'contact_window'), None) or \
         next((s for s in steps if s['status'] in ('stop', 'action', 'wait')), steps[0])
     headline = first['title']
     if window and window.get('available') and first['key'] in ('hardship', 'promise', 'payment_ask', 'vulnerability'):
         headline += f" ({window['day']}, {window['from_local']}-{window['until_local']} their time)"
-    return {'as_of': AS_OF.isoformat(), 'snapshot_date': SNAPSHOT, 'case_id': ctx['case']['case_id'],
+    return {'as_of': as_of.isoformat(), 'snapshot_date': SNAPSHOT, 'case_id': ctx['case']['case_id'],
             'next_action': headline, 'steps': steps, 'contact_window': window, 'programmes': offers,
             'payday_estimate': payday.isoformat() if payday else None,
             'note': 'Rules from POL-COLL-001, POL-COLL-004, PRC-COLL-010/012 and POL-COLL-007 applied to source records. '
-                    'Suggestions for the agent; a supervisor reviews the brief. Holidays: config/statutory_holidays.csv.'}
+                    'Suggestions for the agent; a supervisor reviews the brief. Holidays: national statutory rules plus config/statutory_holidays.csv.'}
 
 
 CUSTOMER_FIELDS = '''crm_customer_id,time_zone,fsa,province_code,preferred_language,consent_call,consent_sms,consent_email,
@@ -382,7 +417,7 @@ CUSTOMER_FIELDS = '''crm_customer_id,time_zone,fsa,province_code,preferred_langu
 CASE_FIELDS = '''case_id,customer_id,primary_product,primary_account_id,current_dpd,total_overdue,case_status,hardship_flag,
  hardship_plan_type,hardship_plan_end,dispute_flag,dispute_status,dispute_type,complaint_flag,complaint_stage,cease_contact_flag,
  third_party_rep_flag,insolvency_hold_flag,deceased_hold_flag,vulnerable_customer_flag,assigned_agent_id,current_ptp_id,
- current_ptp_amount,current_ptp_due_date,case_open_date'''
+ current_ptp_amount,current_ptp_due_date,case_open_date,contact_cap_7d'''
 
 
 def _rows(c, sql, params):
@@ -391,8 +426,10 @@ def _rows(c, sql, params):
     return [dict(zip(keys, row)) for row in r.fetchall()]
 
 
-def load(c, customer_id, as_of=AS_OF):
+def load(c, customer_id, as_of=None):
     """Read the source records one plan needs; returns None without an open case."""
+    as_of = as_of or AS_OF
+    _load_versions(c, as_of.date())
     cust = _rows(c, f'SELECT {CUSTOMER_FIELDS} FROM curated.customers WHERE crm_customer_id=(SELECT crm_customer_id FROM gold.customers WHERE customer_id=?) ORDER BY extract_ts DESC NULLS LAST LIMIT 1', [customer_id])
     cases = _rows(c, f'SELECT {CASE_FIELDS} FROM gold.cases WHERE customer_id=? AND outcome IS NULL ORDER BY current_dpd DESC NULLS LAST,total_overdue DESC NULLS LAST,case_id', [customer_id])
     if not cust or not cases:

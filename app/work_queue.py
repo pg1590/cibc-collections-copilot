@@ -17,7 +17,7 @@ RANK = {key: i for i, (key, _, _) in enumerate(TIERS)}
 
 QUEUE_SQL = f'''SELECT g.case_id,g.customer_id,s.name,g.primary_product,g.current_dpd,g.total_overdue,g.case_status,g.hardship_flag,
  g.hardship_plan_type,g.cease_contact_flag,g.insolvency_hold_flag,g.deceased_hold_flag,g.third_party_rep_flag,g.dispute_flag,g.dispute_status,
- g.vulnerable_customer_flag,g.queue,p.ptp_id,p.ptp_amount,p.ptp_due_date,
+ g.vulnerable_customer_flag,g.queue,g.contact_cap_7d,p.ptp_id,p.ptp_amount,p.ptp_due_date,
  c.time_zone,c.permitted_call_start_local,c.permitted_call_end_local,c.sunday_contact_permitted,c.preferred_language,
  c.bankruptcy_flag,c.consumer_proposal_flag,c.cease_communication_flag,c.deceased_flag,c.consent_call,c.consent_sms,c.consent_email,
  c.internal_do_not_call_flag
@@ -48,7 +48,8 @@ def _tier(r, as_of_date):
     return 'standard', f"{r['current_dpd'] or 0} days past due, CAD {r['total_overdue'] or 0:,.2f} overdue."
 
 
-def build(c, agent_id, as_of=ap.AS_OF, limit=500):
+def build(c, agent_id, as_of=None, limit=500):
+    as_of = as_of or ap.AS_OF
     from app.main import records
     rows = records(c, QUEUE_SQL, [agent_id])
     if not rows:
@@ -61,14 +62,14 @@ def build(c, agent_id, as_of=ap.AS_OF, limit=500):
             AND coalesce(channel_v2,channel) IN {ap.ATTEMPT_CHANNELS} AND contact_ts_utc>? AND contact_ts_utc<=?""",
             [*ids, (as_of - timedelta(days=8)).replace(tzinfo=None), as_of.replace(tzinfo=None)]).fetchall():
         attempts.setdefault(case_id, []).append(ts)
-    holiday_names = ap.holidays()
+    holiday_names = ap.holidays(as_of.date())
     items = []
     for r in rows:
         tier, reason = _tier(r, as_of.date())
         window = None
         if tier not in ('stop_now', 'on_hold'):
             w = ap.contact_window(attempts.get(r['case_id'], []), r['time_zone'], r['permitted_call_start_local'],
-                                  r['permitted_call_end_local'], r['sunday_contact_permitted'], holiday_names, as_of)
+                                  r['permitted_call_end_local'], r['sunday_contact_permitted'], holiday_names, as_of, r['contact_cap_7d'])
             window = {k: w.get(k) for k in ('available', 'date', 'day', 'from_local', 'until_local', 'time_zone', 'attempts_last_7d', 'at_utc')}
             due = r['ptp_due_date']
             if tier == 'promise_due' and (not w['available'] or w['date'] > due.isoformat()):

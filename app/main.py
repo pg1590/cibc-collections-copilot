@@ -18,6 +18,8 @@ from pydantic import BaseModel,Field
 from app import storage, runtime, voice, action_plan, work_queue, portfolio_checks
 from app.features import VERSION,TEXT_FEATURES,feature_sql,evidence,definitions,text_features
 from app.settings import DATASET,DB,QUALITY,MODEL,MODEL_REPORT,ROOT,SNAPSHOT
+from datetime import date as _date,timedelta as _timedelta
+VOICE_CUTOFF=(_date.fromisoformat(SNAPSHOT)+_timedelta(days=1)).isoformat()  # recordings up to the snapshot day
 
 app=FastAPI(title='Collections Copilot',version='0.1.0')
 bearer=HTTPBearer(auto_error=False)
@@ -177,7 +179,7 @@ def recording(voice_id,u):
     with db() as c:
         condition,params=voice_scope(c,u)
         rows=records(c,f'''SELECT DISTINCT {VOICE_COLUMNS} {VOICE_JOIN}
-          WHERE v.voice_sample_id=? AND t.call_start_ts<TIMESTAMP '2026-09-29' {condition}''',[voice_id,*params])
+          WHERE v.voice_sample_id=? AND t.call_start_ts<CAST(? AS TIMESTAMP) {condition}''',[voice_id,VOICE_CUTOFF,*params])
     if len(rows)!=1:
         raise HTTPException(404,'Recording was not found in your permitted cases.')
     return rows[0]
@@ -198,8 +200,8 @@ def customer_voice(cid:str,u=Depends(user)):
         authorize_customer(c,u,cid)
         condition,params=voice_scope(c,u)
         rows=records(c,f'''SELECT DISTINCT {VOICE_COLUMNS} {VOICE_JOIN}
-         WHERE g.customer_id=? AND t.call_start_ts<TIMESTAMP '2026-09-29' {condition}
-         ORDER BY t.call_start_ts DESC,v.voice_sample_id LIMIT 20''',[cid,*params])
+         WHERE g.customer_id=? AND t.call_start_ts<CAST(? AS TIMESTAMP) {condition}
+         ORDER BY t.call_start_ts DESC,v.voice_sample_id LIMIT 20''',[cid,VOICE_CUTOFF,*params])
     items=[{key:row[key] for key in ['voice_sample_id','transcript_id','case_id','call_start_ts','language','duration_sec']} |
            {'audio_available':voice.audio_available(DATASET,row)} for row in rows]
     return {'items':items,'speech_to_text_available':voice.speech_available(),
