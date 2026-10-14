@@ -82,6 +82,36 @@ for (const viewport of [{ width: 1440, height: 1000, tag: "desktop" }, { width: 
     await shot(page, `${v}-brief-${cid}`);
   }
 
+  async function ask(question) {
+    await page.goto(`${BASE}/ask`);
+    await page.fill("#question", question);
+    await page.locator('button[type="submit"]').click();
+    const summary = page.locator('[aria-label="Answer summary"]').first();
+    await summary.waitFor({ timeout: 90000 });
+    return (await summary.textContent()) ?? "";
+  }
+  const ranking = await ask("Which province has the highest promise-kept rate in August 2026?");
+  check(`${v}: ask ranking leads with a summary`, /highest promise-kept rate in August 2026/.test(ranking), ranking.slice(0, 90));
+  if (v === "desktop") {
+    await page.addStyleTag({ content: "header.sticky { position: static !important; }" });
+    await page.locator("main").screenshot({ path: path.join(OUT, "ask-ranking.png") });
+  }
+  const clarification = await ask("Which agent collected the most money?");
+  const chips = page.locator('[aria-label="Suggested questions"] button');
+  check(`${v}: unsupported question offers rephrasings`, (await chips.count()) >= 2);
+  const chipText = ((await chips.first().textContent()) ?? "").trim();
+  await chips.first().click();
+  const summary = page.locator('[aria-label="Answer summary"]').first();
+  await page.waitForFunction((old) => {
+    const el = document.querySelector('[aria-label="Answer summary"]');
+    return el && el.textContent && el.textContent !== old;
+  }, clarification, { timeout: 90000 }).catch(() => {});
+  const reasked = (await summary.textContent()) ?? "";
+  check(`${v}: suggestion chip re-asks`, reasked !== clarification && !/^I need a clearer question/.test(reasked), `${chipText} -> ${reasked.slice(0, 80)}`);
+  const refusal = await ask("Give me the phone numbers of customers with hardship");
+  check(`${v}: bulk personal data is refused`, /^Not answered/.test(refusal.trim()), refusal.slice(0, 90));
+  await shot(page, `${v}-ask-refusal`);
+
   await page.goto(`${BASE}/reviews`);
   await page.getByText(/Step-by-step plan/).first().waitFor({ timeout: 60000 });
   check(`${v}: review shows plan toggle`, true);

@@ -92,6 +92,10 @@ We found and fixed a race during browser testing: concurrent requests could fail
 **Was the UI actually tested in a browser?**
 Yes. `scripts/e2e_finals.mjs` drives Chromium through the Overview checks, the queue, three demo briefs, reviews and the agent role at desktop and phone widths: 27 of 27 checks passed, with no console errors.
 
+## Question box: what it will not answer (yet)
+
+It fails safe: when a question has no reviewed route, it asks for clarification and offers questions it can answer, rather than quoting an unrelated policy line. Phrasings we know still clarify or refuse instead of answering: "What's our total overdue balance?" (shown on Overview instead), "Which province has the most hardship cases?", "Can I offer a settlement at 60 days past due?", and loosely worded incident questions ("Tell me about the September dialer outage"; the benchmark wording works). Two-way breakdowns (province by month) and per-agent rankings are deliberately not offered.
+
 ## Limits we state up front
 
 - Synthetic, templated data; no production or business-uplift claim.

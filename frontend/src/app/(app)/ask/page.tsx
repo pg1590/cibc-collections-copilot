@@ -41,6 +41,11 @@ function AnswerCard({ question, result, onAsk, pending }: Exchange & { onAsk: (q
         { label: "Before", value: result.plan.end_date },
       ].filter(({ value }) => value !== undefined && value !== null && value !== "")
     : [];
+  // Table answers arrive as CSV plus a note; the rows render as a table below, so show only the note.
+  const rows = Array.isArray(result.rows) ? result.rows : [];
+  const lines = (result.answer ?? "").split("\n");
+  const tableNote =
+    rows.length && rows[0] && lines[0] === Object.keys(rows[0]).join(",") ? lines.slice(rows.length + 1).join(" ").trim() : null;
   return (
     <Card>
       <CardHeader>
@@ -71,6 +76,8 @@ function AnswerCard({ question, result, onAsk, pending }: Exchange & { onAsk: (q
               {result.reason && result.answer && result.answer !== result.reason && <p>{result.answer}</p>}
             </AlertDescription>
           </Alert>
+        ) : tableNote !== null ? (
+          tableNote && <p className="text-muted-foreground text-sm leading-relaxed">{tableNote}</p>
         ) : (
           <RichText text={result.answer} className="text-[1.05rem] leading-relaxed" />
         )}
