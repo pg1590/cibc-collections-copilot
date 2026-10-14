@@ -81,3 +81,12 @@ def test_vulnerability_never_changes_the_tier():
     today = date(2026, 9, 28)
     for values in [{}, {'hardship_flag': True}, {'current_dpd': 160}]:
         assert work_queue._tier(row(**values), today) == work_queue._tier(row(vulnerable_customer_flag=True, **values), today)
+
+
+def test_concurrent_requests_do_not_race_the_database_lockdown(client):
+    from concurrent.futures import ThreadPoolExecutor
+    api, _ = client
+    h = headers(api, 'supervisor')
+    with ThreadPoolExecutor(8) as pool:
+        codes = list(pool.map(lambda _: api.get('/api/queue', headers=h).status_code, range(24)))
+    assert set(codes) == {200}

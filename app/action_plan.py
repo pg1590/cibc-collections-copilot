@@ -342,9 +342,11 @@ def build(ctx, hardship_status, as_of=AS_OF, holiday_names=None):
                 if target else f'Their next estimated payday, {_day(payday)}, is more than {PTP_MAX_DAYS} days away: propose a date by {_day(latest)}.'
                 if payday else f'Pay frequency is {frequency} but no recent salary credit is recorded: ask for their next payday and set a date within {PTP_MAX_DAYS} days (by {_day(latest)}).')
         amount = _money(case.get('total_overdue'))
+        vulnerable = case.get('vulnerable_customer_flag') or cust.get('vulnerability_flag')
         detail = (f'Overdue on the case: {amount}.' + (' Exclude the disputed amount.' if disputed else '') +
+                  (' Vulnerable-customer approach: offer hardship options first and never pressure for payment (SCR-VUL-EN).' if vulnerable else '') +
                   f' {when} Read back the amount and date and offer a payment link.')
-        _step(steps, 'payment_ask', 'action', 'Ask for the payment, timed to their payday', detail, ['ptp', 'ptp_confirm'],
+        _step(steps, 'payment_ask', 'action', 'Ask for the payment, timed to their payday', detail, ['ptp', 'ptp_confirm'] + (['vulnerable'] if vulnerable else []),
               [case_ref] + ([f"salary_credit_history:{cust.get('crm_customer_id')}"] if target else []))
     return _finish(steps, ctx, window, offers, payday)
 

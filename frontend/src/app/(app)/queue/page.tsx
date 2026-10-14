@@ -114,7 +114,49 @@ function QueueWorkspace() {
           </p>
 
           {items.length ? (
-            <div className="rounded-lg border">
+            <>
+            <ol className="space-y-2.5 md:hidden" aria-label="Work queue in urgency order">
+              {items.map((i) => (
+                <li key={i.case_id} className="bg-card rounded-lg border p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-medium">
+                        <span className="text-muted-foreground mr-1.5 tabular-nums">{i.position}.</span>
+                        <Link href={`/customers/${encodeURIComponent(i.customer_id)}`} className="underline-offset-4 hover:underline">
+                          {i.name}
+                        </Link>
+                      </p>
+                      <p className="text-muted-foreground font-mono text-xs">
+                        {i.customer_id} · {i.product.replace(/_/g, " ")} · {i.dpd ?? "—"} DPD · {formatCad(i.overdue_cad)}
+                      </p>
+                    </div>
+                    <Badge variant={TIER_BADGE[i.tier]}>{i.tier_label}</Badge>
+                  </div>
+                  <p className="mt-2 text-sm leading-snug">{i.reason}</p>
+                  {i.flags.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {i.flags.map((f) => (
+                        <Badge key={f} variant="outline" className="text-[0.7rem]">
+                          {FLAG_LABEL[f] ?? f}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-2 flex items-end justify-between gap-2 border-t pt-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground block text-xs">Next allowed contact</span>
+                      <NextContact item={i} />
+                    </div>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/briefs?customer=${encodeURIComponent(i.customer_id)}`} aria-label={`Prepare brief for ${i.name}`}>
+                        Brief <ArrowRight aria-hidden />
+                      </Link>
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <div className="hidden rounded-lg border md:block">
               <Table>
                 <caption className="sr-only">Work queue in urgency order</caption>
                 <TableHeader>
@@ -170,6 +212,7 @@ function QueueWorkspace() {
                 </TableBody>
               </Table>
             </div>
+            </>
           ) : (
             <EmptyState title="No cases in this view" description="This agent has no open assigned cases in the selected tier." />
           )}

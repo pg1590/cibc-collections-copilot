@@ -215,3 +215,8 @@ def test_window_shorter_than_fifteen_minutes_moves_to_next_day():
     attempts = [datetime(2026, 9, 22, 0, 55), datetime(2026, 9, 25, 12, 0), datetime(2026, 9, 26, 12, 0)]
     window = ap.contact_window(attempts, 'America/Toronto', '07:00', '21:00', True, {})
     assert window['date'] == '2026-09-29' and window['from_local'] == '07:00'
+
+
+def test_vulnerable_payment_ask_repeats_the_script_rule():
+    ask = plan(ctx(case={'vulnerable_customer_flag': True}))['steps'][-1]
+    assert 'never pressure for payment' in ask['detail'] and 'POL-COLL-004 v4.2 §4.5' in ask['policy']

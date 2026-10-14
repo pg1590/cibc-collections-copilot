@@ -70,6 +70,10 @@ def build(c, agent_id, as_of=ap.AS_OF, limit=500):
             w = ap.contact_window(attempts.get(r['case_id'], []), r['time_zone'], r['permitted_call_start_local'],
                                   r['permitted_call_end_local'], r['sunday_contact_permitted'], holiday_names, as_of)
             window = {k: w.get(k) for k in ('available', 'date', 'day', 'from_local', 'until_local', 'time_zone', 'attempts_last_7d', 'at_utc')}
+            due = r['ptp_due_date']
+            if tier == 'promise_due' and (not w['available'] or w['date'] > due.isoformat()):
+                reason = (f"Promise of CAD {r['ptp_amount'] or 0:,.2f} due {ap._day(due)}, but no contact is allowed before then: "
+                          'check for payment after the 2-business-day grace period.')
         items.append({'case_id': r['case_id'], 'customer_id': r['customer_id'], 'name': r['name'], 'product': r['primary_product'],
                       'dpd': r['current_dpd'], 'overdue_cad': r['total_overdue'], 'tier': tier, 'tier_label': TIERS[RANK[tier]][1],
                       'reason': reason, 'next_contact': window,

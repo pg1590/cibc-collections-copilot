@@ -188,7 +188,7 @@ export default function OverviewPage() {
                   <ErrorState message={checks.error} onRetry={checks.reload} />
                 ) : (
                   checks.data && (
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {checks.data.items.map((c) => (
                         <CheckCard key={c.id} check={c} />
                       ))}

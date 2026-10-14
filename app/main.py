@@ -2,6 +2,7 @@
 import json
 import os
 import secrets
+import threading
 import time
 import uuid
 from contextlib import contextmanager
@@ -20,6 +21,7 @@ from app.settings import DATASET,DB,QUALITY,MODEL,MODEL_REPORT,ROOT,SNAPSHOT
 
 app=FastAPI(title='Collections Copilot',version='0.1.0')
 bearer=HTTPBearer(auto_error=False)
+_lockdown=threading.Lock()
 
 
 @contextmanager
@@ -28,9 +30,12 @@ def db():
     c=duckdb.connect(str(DB),read_only=True)
     c.execute("SET memory_limit='1GB'");c.execute('SET threads=2')
     trusted=str(DATASET/'data').replace("'","''")
-    if c.execute("SELECT current_setting('enable_external_access')").fetchone()[0]:
-        c.execute(f"SET allowed_directories=['{trusted}/']")
-        c.execute('SET enable_external_access=false')
+    # Connections in one process share the database instance, so the one-way
+    # lockdown is serialised; concurrent requests otherwise race and fail.
+    with _lockdown:
+        if c.execute("SELECT current_setting('enable_external_access')").fetchone()[0]:
+            c.execute(f"SET allowed_directories=['{trusted}/']")
+            c.execute('SET enable_external_access=false')
     try:yield c
     finally:c.close()
 
