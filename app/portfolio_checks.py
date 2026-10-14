@@ -75,6 +75,34 @@ def run(c, key):
             items = []
             for check in CHECKS:
                 items.append(check | {'value': int(c.execute(check['sql']).fetchone()[0])})
-            _cache.clear()
             _cache[key] = items
         return _cache[key]
+
+
+# Money at stake behind the checks above. Source estimates are labelled as estimates.
+VALUE = [
+    {'id': 'write_off_exposure', 'title': 'Exposure on cases close to write-off', 'unit': 'CAD', 'kind': 'money',
+     'definition': 'Total exposure (source total_exposure) on open cases at 150-180 days past due; the source expected-loss estimate is shown alongside.',
+     'sql': '''SELECT round(sum(total_exposure),2), round(sum(expected_loss_est),2), round(sum(total_overdue),2) FROM gold.cases
+WHERE outcome IS NULL AND current_dpd BETWEEN 150 AND 180'''},
+    {'id': 'hardship_overdue', 'title': 'Overdue with customers in hardship and no plan', 'unit': 'CAD', 'kind': 'money',
+     'definition': 'Overdue balance on open hardship-flagged cases without a hardship plan or a contact restriction.',
+     'sql': f'''SELECT round(sum(g.total_overdue),2), NULL, count(DISTINCT g.customer_id) FROM gold.cases g JOIN gold.customers c USING(customer_id)
+WHERE g.outcome IS NULL AND g.hardship_flag AND g.hardship_plan_type IS NULL AND NOT {RESTRICTED}'''},
+    {'id': 'contact_spend', 'title': 'Outbound contact spend (last 30 days)', 'unit': 'CAD', 'kind': 'money',
+     'definition': f'Recorded contact cost (contact_cost_cad) of outbound contacts from {_d(_MONTH_AGO)} to {_d(_NOW)}; second figure: contacts.',
+     'sql': f'''SELECT round(sum(contact_cost_cad),2), count(*), NULL FROM curated.contact_history
+WHERE direction='outbound' AND contact_ts_utc>TIMESTAMP '{_MONTH_AGO}' AND contact_ts_utc<=TIMESTAMP '{_NOW}' '''},
+]
+
+
+def value(c, key):
+    with _lock:
+        cache_key = ('value', key)
+        if cache_key not in _cache:
+            items = []
+            for v in VALUE:
+                a, b, d = c.execute(v['sql']).fetchone()
+                items.append(v | {'value': float(a or 0), 'secondary': None if b is None else float(b), 'tertiary': None if d is None else float(d)})
+            _cache[cache_key] = items
+        return _cache[cache_key]

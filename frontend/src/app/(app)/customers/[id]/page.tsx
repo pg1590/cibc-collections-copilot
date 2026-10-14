@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, FileText } from "lucide-react";
+import { ArrowLeft, FileText, PhoneCall } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { KeyValueList, RecordTable } from "@/components/record-table";
 import { ErrorState, LoadingState } from "@/components/states";
@@ -75,13 +75,22 @@ export default function CustomerDetailPage() {
         title={customer.name}
         description={`Customer ${customer.customer_id} · data as of snapshot ${snapshot_date}`}
         actions={
-          canSee(session?.user.role, "briefs") && (
-            <Button asChild>
-              <Link href={`/briefs?customer=${encodeURIComponent(customer.customer_id)}`}>
-                <FileText aria-hidden /> Prepare agent brief
-              </Link>
-            </Button>
-          )
+          <>
+            {canSee(session?.user.role, "briefs") && (
+              <Button asChild variant={canSee(session?.user.role, "call") ? "outline" : "default"}>
+                <Link href={`/briefs?customer=${encodeURIComponent(customer.customer_id)}`}>
+                  <FileText aria-hidden /> Prepare agent brief
+                </Link>
+              </Button>
+            )}
+            {canSee(session?.user.role, "call") && (
+              <Button asChild>
+                <Link href={`/call/${encodeURIComponent(customer.customer_id)}`}>
+                  <PhoneCall aria-hidden /> Start call
+                </Link>
+              </Button>
+            )}
+          </>
         }
       />
 

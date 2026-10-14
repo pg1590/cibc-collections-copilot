@@ -120,6 +120,16 @@ def overview_checks(u=Depends(user)):
     return {'snapshot_date':SNAPSHOT,'items':items}
 
 
+@app.get('/api/overview/value')
+def overview_value(u=Depends(user)):
+    if u['role']=='agent':raise HTTPException(403,'Portfolio value views require an analyst or supervisor.')
+    with db() as c:items=portfolio_checks.value(c,(str(DB),DB.stat().st_mtime))
+    report=ROOT/'data/plans-report.json'
+    plans=json.loads(report.read_text(encoding='utf-8')) if report.exists() else None
+    if plans and plans.get('snapshot_date')!=SNAPSHOT:plans=None  # stale batch from another extract
+    return {'snapshot_date':SNAPSHOT,'items':items,'plans':plans}
+
+
 @app.get('/api/queue')
 def queue(agent:str|None=Query(None,max_length=32,pattern=r'^[A-Za-z0-9-]+$'),u=Depends(user)):
     if u['role']=='analyst':raise HTTPException(403,'The work queue is for agents and supervisors.')

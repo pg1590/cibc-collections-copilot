@@ -21,11 +21,13 @@ const PROGRAMME_STATUS: Record<Programme["status"], { label: string; badge: "suc
   not_eligible: { label: "Not eligible", badge: "outline" },
 };
 
-function Step({ step }: { step: PlanStep }) {
+function Step({ step, changed = false, compact = false }: { step: PlanStep; changed?: boolean; compact?: boolean }) {
   const s = STATUS[step.status];
   const Icon = s.icon;
+  // In compact mode a step that is already checked shows only its title.
+  const brief = compact && step.status === "clear";
   return (
-    <li className={cn("rounded-lg border p-4", s.tone)}>
+    <li className={cn("rounded-lg border", compact ? "p-3" : "p-4", s.tone, changed && "motion-safe:animate-plan-flash")}>
       <div className="flex items-start gap-3">
         <span className="bg-background text-muted-foreground mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold tabular-nums">
           {step.order}
@@ -36,16 +38,17 @@ function Step({ step }: { step: PlanStep }) {
               <Icon aria-hidden /> {s.label}
             </Badge>
             <h4 className="font-semibold leading-snug">{step.title}</h4>
+            {changed && <span className="text-primary text-xs font-medium">Updated</span>}
           </div>
-          <p className="text-sm leading-relaxed">{step.detail}</p>
-          {(step.policy.length > 0 || step.evidence.length > 0) && (
+          {!brief && <p className="text-sm leading-relaxed">{step.detail}</p>}
+          {!brief && (step.policy.length > 0 || (!compact && step.evidence.length > 0)) && (
             <div className="flex flex-wrap gap-1.5 pt-1">
               {step.policy.map((p) => (
                 <Badge key={p} variant="teal" className="font-mono">
                   {p}
                 </Badge>
               ))}
-              {step.evidence.map((e) => (
+              {!compact && step.evidence.map((e) => (
                 <span key={e} className="bg-muted/70 text-muted-foreground rounded px-1.5 py-0.5 font-mono text-[0.7rem] break-all">
                   {e}
                 </span>
@@ -99,7 +102,16 @@ function Programmes({ items }: { items: Programme[] }) {
   );
 }
 
-export function ActionPlanCard({ plan, compact = false }: { plan: ActionPlan; compact?: boolean }) {
+/** `changed` lists step keys to mark as just updated (Live Call Mode recomputes the plan as the call goes). */
+export function ActionPlanCard({
+  plan,
+  compact = false,
+  changed,
+}: {
+  plan: ActionPlan;
+  compact?: boolean;
+  changed?: ReadonlySet<string>;
+}) {
   return (
     <Card className="border-primary/25">
       <CardHeader>
@@ -118,7 +130,7 @@ export function ActionPlanCard({ plan, compact = false }: { plan: ActionPlan; co
       <CardContent className="space-y-4">
         <ol className="space-y-2.5">
           {plan.steps.map((step) => (
-            <Step key={step.order} step={step} />
+            <Step key={`${step.order}-${step.key}`} step={step} changed={changed?.has(step.key)} compact={compact} />
           ))}
         </ol>
         {!compact && <Programmes items={plan.programmes} />}

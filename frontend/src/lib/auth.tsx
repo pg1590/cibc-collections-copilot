@@ -58,6 +58,7 @@ export const SECTION_ROLES = {
   customers: ["analyst", "agent", "supervisor"],
   ask: ["analyst", "supervisor"],
   briefs: ["agent", "supervisor"],
+  call: ["agent", "supervisor"],
   reviews: ["agent", "supervisor"],
   quality: ["analyst", "supervisor"],
 } as const satisfies Record<string, readonly Role[]>;

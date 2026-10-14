@@ -347,6 +347,9 @@ def session(ctx, base_status, outcomes):
         script.insert(0, {'key': 'french', 'text': 'Conduct the call in French (Montréal site).', 'required': True, 'done': False, 'policy': [ap.POLICY['language']]})
 
     _reflect_agreements(plan, o, chosen, checks)
+    if blocked:  # nothing to say to the customer: no script, no call record beyond the restriction
+        script = []
+        o = normalise({})
     wrap = wrap_up(ctx, o, plan, checks, chosen, call_at, tz, stage, cap, holiday_names)
     return {'customer': {'customer_id': case['customer_id'], 'name': cust.get('name'), 'preferred_language': cust.get('preferred_language'),
                          'time_zone': cust.get('time_zone') or 'unknown', 'local_time_now': call_at.astimezone(tz).strftime('%a %d %b %H:%M') if call_at else None,
@@ -375,6 +378,10 @@ def _reflect_agreements(plan, o, chosen, checks):
 def wrap_up(ctx, o, plan, checks, chosen, call_at, tz, stage, cap, holiday_names):
     case, cust = ctx['case'], ctx['customer']
     lines, codes, follow = [], [], []
+    if stage == 'blocked':
+        return {'note': f"No call made on case {case['case_id']}: {plan['steps'][0]['title']}. {plan['steps'][0]['detail']}",
+                'outcome_codes': ['NO_CONTACT_RESTRICTION'], 'follow_ups': [], 'ready_to_submit': False,
+                'blocking': ['Contact is not allowed for this customer.']}
     when = call_at.astimezone(tz).strftime('%a %d %b %Y %H:%M') if call_at else 'not allowed'
     reached = {'customer': 'Reached the customer', 'third_party': 'Reached a third party (no debt details disclosed)',
                'no_answer': 'No answer', 'voicemail': 'Voicemail (name and number only)'}.get(o['reached'], 'Not yet recorded')

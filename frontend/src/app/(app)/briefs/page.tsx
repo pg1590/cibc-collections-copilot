@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowRight, Cpu, Hourglass, Loader2, Sparkles } from "lucide-react";
+import { ArrowRight, Cpu, Hourglass, Loader2, PhoneCall, Sparkles } from "lucide-react";
 import { ActionPlanCard } from "@/components/action-plan";
 import { PageHeader } from "@/components/page-header";
 import { KeyValueList } from "@/components/record-table";
@@ -37,6 +37,17 @@ function BriefView({ brief }: { brief: Brief }) {
       </Alert>
 
       {brief.action_plan && <ActionPlanCard plan={brief.action_plan} />}
+
+      <div className="flex flex-col gap-3 rounded-xl border border-primary/25 bg-accent/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm leading-relaxed">
+          <strong>Ready to call?</strong> Call mode walks you through this plan and updates it as the customer answers.
+        </p>
+        <Button asChild className="shrink-0">
+          <Link href={`/call/${encodeURIComponent(brief.customer_id)}`}>
+            <PhoneCall aria-hidden /> Start call
+          </Link>
+        </Button>
+      </div>
 
       <Card>
         <CardHeader>

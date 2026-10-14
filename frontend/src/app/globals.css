@@ -71,6 +71,19 @@
   --radius-xl: calc(var(--radius) + 4px);
   --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+  --animate-plan-flash: plan-flash 1.8s ease-out;
+  /* Live Call Mode switches to three columns here (between xl and 2xl). */
+  --breakpoint-wide: 87.5rem;
+}
+
+/* Live Call Mode: a plan step that just changed glows teal once, then settles. */
+@keyframes plan-flash {
+  0% {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+  }
 }
 
 @layer base {

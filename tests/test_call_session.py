@@ -54,7 +54,8 @@ def test_unknown_values_are_normalised_not_trusted():
 def test_restriction_blocks_the_call():
     r = cs.session(ctx(case={'insolvency_hold_flag': True}), 'not_established', talking())
     assert r['stage'] == 'blocked' and not r['can_discuss_debt'] and 'blocked' in keys(r, 'block')
-    assert r['wrap_up']['ready_to_submit'] is False
+    assert r['wrap_up']['ready_to_submit'] is False and r['script'] == []
+    assert r['wrap_up']['note'].startswith('No call made') and r['wrap_up']['outcome_codes'] == ['NO_CONTACT_RESTRICTION']
 
 
 def test_debt_is_locked_until_notice_and_identity():

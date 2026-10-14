@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowRight, RotateCw } from "lucide-react";
+import { ArrowRight, PhoneCall, RotateCw } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { RoleGate } from "@/components/role-gate";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states";
@@ -147,11 +147,18 @@ function QueueWorkspace() {
                       <span className="text-muted-foreground block text-xs">Next allowed contact</span>
                       <NextContact item={i} />
                     </div>
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/briefs?customer=${encodeURIComponent(i.customer_id)}`} aria-label={`Prepare brief for ${i.name}`}>
-                        Brief <ArrowRight aria-hidden />
-                      </Link>
-                    </Button>
+                    <div className="flex gap-1.5">
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/briefs?customer=${encodeURIComponent(i.customer_id)}`} aria-label={`Prepare brief for ${i.name}`}>
+                          Brief <ArrowRight aria-hidden />
+                        </Link>
+                      </Button>
+                      <Button asChild size="sm">
+                        <Link href={`/call/${encodeURIComponent(i.customer_id)}`} aria-label={`Start call with ${i.name}`}>
+                          <PhoneCall aria-hidden /> Call
+                        </Link>
+                      </Button>
+                    </div>
                   </div>
                 </li>
               ))}
@@ -166,7 +173,7 @@ function QueueWorkspace() {
                     <TableHead scope="col">Why it is here</TableHead>
                     <TableHead scope="col">Next allowed contact</TableHead>
                     <TableHead scope="col" className="text-right">Overdue</TableHead>
-                    <TableHead scope="col"><span className="sr-only">Open brief</span></TableHead>
+                    <TableHead scope="col"><span className="sr-only">Brief and call</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -201,11 +208,18 @@ function QueueWorkspace() {
                       </TableCell>
                       <TableCell className="text-right align-top tabular-nums">{formatCad(i.overdue_cad)}</TableCell>
                       <TableCell className="align-top">
-                        <Button asChild variant="ghost" size="sm">
-                          <Link href={`/briefs?customer=${encodeURIComponent(i.customer_id)}`} aria-label={`Prepare brief for ${i.name}`}>
-                            Brief <ArrowRight aria-hidden />
-                          </Link>
-                        </Button>
+                        <div className="flex justify-end gap-1">
+                          <Button asChild variant="ghost" size="sm">
+                            <Link href={`/briefs?customer=${encodeURIComponent(i.customer_id)}`} aria-label={`Prepare brief for ${i.name}`}>
+                              Brief <ArrowRight aria-hidden />
+                            </Link>
+                          </Button>
+                          <Button asChild variant="outline" size="sm">
+                            <Link href={`/call/${encodeURIComponent(i.customer_id)}`} aria-label={`Start call with ${i.name}`}>
+                              <PhoneCall aria-hidden /> Call
+                            </Link>
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

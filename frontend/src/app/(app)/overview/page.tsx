@@ -10,6 +10,99 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { PortfolioCheck, PortfolioChecks } from "@/lib/plan-types";
+
+interface ValueItem {
+  id: string;
+  title: string;
+  definition: string;
+  sql: string;
+  value: number;
+  secondary: number | null;
+  tertiary: number | null;
+}
+interface PortfolioValue {
+  items: ValueItem[];
+  plans: { customers: number; plans: number; errors: number; seconds: number; plans_per_second: number; workers: number; next_step_counts: Record<string, number> } | null;
+}
+
+const NEXT_STEP_LABEL: Record<string, string> = {
+  payment_ask: "Ask for payment, timed to payday",
+  promise: "Remind about an open promise",
+  hardship: "Offer a hardship programme first",
+  restriction: "Don't contact (restriction)",
+  representative: "Contact the representative only",
+  vulnerability: "Vulnerable-customer approach first",
+  dispute: "Pause the disputed amount",
+  complaint: "Handle the open complaint",
+  placement: "Coordinate with agency or legal",
+};
+
+const money = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", notation: "compact", maximumFractionDigits: 1 });
+
+function ValueTile({ item }: { item: ValueItem }) {
+  const extra =
+    item.id === "write_off_exposure"
+      ? `Source expected-loss estimate ${money.format(item.secondary ?? 0)} · overdue ${money.format(item.tertiary ?? 0)}`
+      : item.id === "hardship_overdue"
+        ? `${formatCount(item.tertiary)} customers`
+        : `${formatCount(item.secondary)} outbound contacts`;
+  return (
+    <Card className="gap-2 py-5">
+      <CardContent className="space-y-1.5">
+        <p className="text-muted-foreground text-sm leading-snug">{item.title}</p>
+        <p className="text-3xl font-semibold tabular-nums">{money.format(item.value)}</p>
+        <p className="text-muted-foreground text-xs">{extra}</p>
+        <Collapsible>
+          <CollapsibleTrigger className="text-muted-foreground hover:text-foreground group flex items-center gap-1 text-xs underline-offset-4 hover:underline">
+            <ChevronDown className="size-3.5 transition-transform group-data-[state=open]:rotate-180" aria-hidden /> Definition and SQL
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2 space-y-2">
+            <p className="text-xs leading-relaxed">{item.definition}</p>
+            <pre className="bg-muted/60 overflow-x-auto rounded-md p-2 font-mono text-[0.7rem] leading-relaxed whitespace-pre-wrap">{item.sql}</pre>
+          </CollapsibleContent>
+        </Collapsible>
+      </CardContent>
+    </Card>
+  );
+}
+
+function NextStepBars({ plans }: { plans: NonNullable<PortfolioValue["plans"]> }) {
+  const rows = Object.entries(plans.next_step_counts).sort((a, b) => b[1] - a[1]);
+  const max = Math.max(...rows.map(([, n]) => n), 1);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Today&apos;s first step, across every open case</CardTitle>
+        <CardDescription>
+          The action plan was built for {formatCount(plans.plans)} customers in {plans.seconds} s ({formatCount(Math.round(plans.plans_per_second))} plans per
+          second, {plans.workers} workers{plans.errors ? `, ${plans.errors} errors` : ", no errors"}) by the nightly batch. Each bar counts the first step an
+          agent would take.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul className="space-y-2.5" aria-label="First step by number of customers">
+          {rows.map(([key, n]) => (
+            <li key={key} className="group grid grid-cols-[minmax(0,14rem)_1fr] items-center gap-3 sm:grid-cols-[16rem_1fr]">
+              <span className="truncate text-sm" title={NEXT_STEP_LABEL[key] ?? key}>
+                {NEXT_STEP_LABEL[key] ?? key}
+              </span>
+              <span className="flex items-center gap-2" title={`${NEXT_STEP_LABEL[key] ?? key}: ${formatCount(n)} customers (${((n / plans.plans) * 100).toFixed(1)}%)`}>
+                <span
+                  className="bg-primary group-hover:bg-primary/80 h-3.5 rounded-r-[4px] transition-colors"
+                  style={{ width: `${Math.max((n / max) * 100, 1)}%` }}
+                  aria-hidden
+                />
+                <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                  {formatCount(n)} · {((n / plans.plans) * 100).toFixed(0)}%
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
 import { canSee, useAuth } from "@/lib/auth";
 import { useApi } from "@/lib/use-api";
 import type { Health, Overview } from "@/lib/types";
@@ -69,6 +162,7 @@ export default function OverviewPage() {
   const overview = useApi<Overview>("/overview");
   const showChecks = role === "analyst" || role === "supervisor";
   const checks = useApi<PortfolioChecks>(showChecks ? "/overview/checks" : null);
+  const value = useApi<PortfolioValue>(showChecks ? "/overview/value" : null);
 
   const identity = overview.data?.identity;
   const identityTotal = identity ? identity.matched + identity.review + identity.unmatched : 0;
@@ -92,7 +186,10 @@ export default function OverviewPage() {
             onClick={() => {
               health.reload();
               overview.reload();
-              if (showChecks) checks.reload();
+              if (showChecks) {
+                checks.reload();
+                value.reload();
+              }
             }}
           >
             <RotateCw aria-hidden /> Refresh
@@ -195,6 +292,23 @@ export default function OverviewPage() {
                     </div>
                   )
                 )}
+              </section>
+            )}
+
+            {showChecks && value.data && (
+              <section aria-labelledby="value-heading" className="space-y-3">
+                <div>
+                  <h2 id="value-heading" className="text-lg font-semibold">
+                    What&apos;s at stake
+                  </h2>
+                  <p className="text-muted-foreground text-sm">Measured balances and spend behind the problems above. Source estimates are labelled as estimates.</p>
+                </div>
+                <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {value.data.items.map((item) => (
+                    <ValueTile key={item.id} item={item} />
+                  ))}
+                </div>
+                {value.data.plans && <NextStepBars plans={value.data.plans} />}
               </section>
             )}
 

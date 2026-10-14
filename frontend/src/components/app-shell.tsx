@@ -101,6 +101,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
       {open && <div className="fixed inset-0 z-30 bg-black/30 lg:hidden" onClick={() => setOpen(false)} aria-hidden />}
+      <CommandPalette open={palette} onOpenChange={setPalette} />
 
       <div className="flex min-w-0 flex-col">
         <header className="bg-background/90 sticky top-0 z-20 flex flex-wrap items-center gap-3 border-b px-4 py-3 backdrop-blur sm:px-8">
@@ -141,7 +142,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Button>
           </div>
         </header>
-        <CommandPalette open={palette} onOpenChange={setPalette} />
         <main
           id="main"
           tabIndex={-1}

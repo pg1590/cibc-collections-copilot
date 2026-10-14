@@ -90,3 +90,12 @@ def test_concurrent_requests_do_not_race_the_database_lockdown(client):
     with ThreadPoolExecutor(8) as pool:
         codes = list(pool.map(lambda _: api.get('/api/queue', headers=h).status_code, range(24)))
     assert set(codes) == {200}
+
+
+def test_value_endpoint_returns_sql_backed_figures(client, monkeypatch):
+    api, _ = client
+    monkeypatch.setattr(portfolio_checks, 'VALUE', [{'id': 'v', 'title': 'V', 'definition': 'd', 'sql': 'SELECT 1.5, 2, NULL FROM gold.checks'}])
+    portfolio_checks._cache.clear()
+    assert api.get('/api/overview/value', headers=headers(api, 'agent')).status_code == 403
+    item = api.get('/api/overview/value', headers=headers(api, 'supervisor')).json()['items'][0]
+    assert (item['value'], item['secondary'], item['tertiary']) == (1.5, 2.0, None)
