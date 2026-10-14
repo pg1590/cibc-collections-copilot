@@ -106,21 +106,30 @@ def contact_window(attempts, tz_name, start, end, sunday_ok, holiday_names, as_o
             'attempts_last_7d': len(recent), 'cap_7d': cap, 'skipped': skipped[-5:]}
 
 
+def _business_day(d):
+    """Weekend paydays are paid the Friday before (seen in salary_credit_history)."""
+    return d - timedelta(days=max(0, d.weekday() - 4))
+
+
 def next_payday(frequency, last_credit, as_of_date):
-    """Estimate only: recorded pay frequency rolled forward from the last salary credit."""
-    if not last_credit or frequency not in ('weekly', 'biweekly', 'semi_monthly', 'monthly'):
+    """Estimate only. Semi-monthly pay lands on the 15th and the last day of the month and
+    monthly pay at month-end (both moved back to Friday at weekends), as in the August 2026
+    salary credits; weekly and biweekly pay roll forward from the last salary credit."""
+    if frequency in ('semi_monthly', 'monthly'):
+        for n in range(3):
+            month = _add_months(as_of_date.replace(day=1), n)
+            last = calendar.monthrange(month.year, month.month)[1]
+            for day in ((15, last) if frequency == 'semi_monthly' else (last,)):
+                if _business_day(month.replace(day=day)) >= as_of_date:
+                    return _business_day(month.replace(day=day))
         return None
-    if frequency == 'semi_monthly':  # 15th and last day of the month
-        for month in (as_of_date.replace(day=1), _add_months(as_of_date.replace(day=1), 1)):
-            for day in (15, calendar.monthrange(month.year, month.month)[1]):
-                if month.replace(day=day) >= as_of_date:
-                    return month.replace(day=day)
+    if not last_credit or frequency not in ('weekly', 'biweekly'):
+        return None
+    step = 7 if frequency == 'weekly' else 14
     d = last_credit
-    for n in range(1, 60):
-        if d >= as_of_date:
-            return d
-        d = _add_months(last_credit, n) if frequency == 'monthly' else last_credit + timedelta(days=(7 if frequency == 'weekly' else 14) * n)
-    return None
+    while d < as_of_date:
+        d += timedelta(days=step)
+    return d
 
 
 def programmes(programs, ctx, hardship_level, as_of_date):
@@ -340,7 +349,8 @@ def build(ctx, hardship_status, as_of=AS_OF, holiday_names=None):
         frequency = (cust.get('pay_frequency') or 'unknown').replace('_', '-')
         when = (f'Propose a promise date on or after their next payday, {_day(target)} (estimated from {frequency} pay and salary credits).'
                 if target else f'Their next estimated payday, {_day(payday)}, is more than {PTP_MAX_DAYS} days away: propose a date by {_day(latest)}.'
-                if payday else f'Pay frequency is {frequency} but no recent salary credit is recorded: ask for their next payday and set a date within {PTP_MAX_DAYS} days (by {_day(latest)}).')
+                if payday else (f'Pay is {frequency}' + ('' if frequency in ('irregular', 'unknown') else ' but no recent salary credit is recorded') +
+                                f': ask for their next payday and set a date within {PTP_MAX_DAYS} days (by {_day(latest)}).'))
         amount = _money(case.get('total_overdue'))
         vulnerable = case.get('vulnerable_customer_flag') or cust.get('vulnerability_flag')
         detail = (f'Overdue on the case: {amount}.' + (' Exclude the disputed amount.' if disputed else '') +

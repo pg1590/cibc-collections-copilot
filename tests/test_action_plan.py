@@ -178,20 +178,24 @@ def test_payment_ask_is_timed_to_payday_and_excludes_disputes():
 
 def test_next_payday_estimates():
     as_of = date(2026, 9, 28)
-    assert ap.next_payday('semi_monthly', date(2026, 8, 31), as_of) == date(2026, 9, 30)
-    assert ap.next_payday('semi_monthly', date(2026, 8, 31), date(2026, 10, 1)) == date(2026, 10, 15)
+    assert ap.next_payday('semi_monthly', None, as_of) == date(2026, 9, 30)
+    assert ap.next_payday('semi_monthly', None, date(2026, 10, 1)) == date(2026, 10, 15)
+    assert ap.next_payday('semi_monthly', None, date(2026, 8, 1)) == date(2026, 8, 14)  # Sat 15 Aug paid Fri 14 Aug
+    assert ap.next_payday('monthly', None, as_of) == date(2026, 9, 30)
+    assert ap.next_payday('monthly', None, date(2026, 10, 1)) == date(2026, 10, 30)  # Sat 31 Oct paid Fri 30 Oct
     assert ap.next_payday('biweekly', date(2026, 8, 21), as_of) == date(2026, 10, 2)
     assert ap.next_payday('weekly', date(2026, 8, 28), as_of) == date(2026, 10, 2)
-    assert ap.next_payday('monthly', date(2026, 8, 31), as_of) == date(2026, 9, 30)
     assert ap.next_payday('irregular', date(2026, 8, 31), as_of) is None
     assert ap.next_payday('biweekly', None, as_of) is None
 
 
 def test_payday_beyond_promise_limit_is_not_used():
-    result = plan(ctx({'pay_frequency': 'monthly'}, last_salary_credit=date(2026, 8, 25)))
-    assert 'Sun 25 Oct, is more than 21 days away: propose a date by Mon 19 Oct' in result['steps'][-1]['detail']
+    late = ap.build(ctx({'pay_frequency': 'biweekly'}, last_salary_credit=date(2026, 10, 23)), 'not_established', holiday_names=HOLIDAYS)
+    assert 'Fri 23 Oct, is more than 21 days away: propose a date by Mon 19 Oct' in late['steps'][-1]['detail']
     missing = plan(ctx({'pay_frequency': 'biweekly'}, last_salary_credit=None))
     assert 'no recent salary credit is recorded' in missing['steps'][-1]['detail']
+    irregular = plan(ctx({'pay_frequency': 'irregular'}))
+    assert 'Pay is irregular: ask for their next payday' in irregular['steps'][-1]['detail']
 
 
 def test_holiday_calendar_contains_policy_example():
