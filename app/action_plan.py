@@ -469,6 +469,84 @@ def load(c, customer_id, as_of=None):
             'programs': programs}
 
 
+def load_many(c, customer_ids, as_of=None):
+    """Set-based load(): the same records for many customers in a fixed number of queries,
+    for batch runs and queues. Returns {customer_id: ctx}; customers without an open case are absent."""
+    as_of = as_of or AS_OF
+    _load_versions(c, as_of.date())
+    ids = list(dict.fromkeys(customer_ids))
+    if not ids:
+        return {}
+    pick = 'SELECT unnest(?::VARCHAR[])'
+    custs = _rows(c, f"""SELECT g.customer_id AS _cid, {', '.join('c.' + f.strip() for f in CUSTOMER_FIELDS.split(','))}
+        FROM gold.customers g JOIN curated.customers c ON c.crm_customer_id=g.crm_customer_id WHERE g.customer_id IN ({pick})
+        QUALIFY row_number() OVER (PARTITION BY g.customer_id ORDER BY c.extract_ts DESC NULLS LAST)=1""", [ids])
+    by_cust = {r.pop('_cid'): r for r in custs}
+    cases = {}
+    for r in _rows(c, f"""SELECT {CASE_FIELDS} FROM gold.cases WHERE customer_id IN ({pick}) AND outcome IS NULL
+                       ORDER BY customer_id, current_dpd DESC NULLS LAST, total_overdue DESC NULLS LAST, case_id""", [ids]):
+        cases.setdefault(r['customer_id'], []).append(r)
+    ready = [cid for cid in ids if cid in by_cust and cid in cases]
+    if not ready:
+        return {}
+    primary = {cid: cases[cid][0] for cid in ready}
+    case_ids = [p['case_id'] for p in primary.values()]
+    zones = {(fsa, prov): tz for fsa, prov, tz in c.execute('SELECT fsa, province_code, time_zone FROM curated.geo_reference').fetchall()}
+    by_fsa = {fsa: tz for (fsa, _), tz in zones.items()}
+    by_prov = {}
+    for (_, prov), tz in zones.items():
+        by_prov.setdefault(prov, tz)
+    attempts = {}
+    for case_id, ts in c.execute(f"""SELECT case_id, contact_ts_utc FROM curated.contact_history WHERE case_id IN ({pick}) AND direction='outbound'
+            AND coalesce(channel_v2,channel) IN {ATTEMPT_CHANNELS} AND contact_ts_utc>? AND contact_ts_utc<=?""",
+                                 [case_ids, (as_of - timedelta(days=8)).replace(tzinfo=None), as_of.replace(tzinfo=None)]).fetchall():
+        attempts.setdefault(case_id, []).append(ts)
+    promises = {r['case_id']: r for r in _rows(c, f"""SELECT case_id, ptp_id, ptp_amount, ptp_due_date, ptp_status FROM curated.promises_to_pay
+            WHERE case_id IN ({pick}) AND ptp_status='open' QUALIFY row_number() OVER (PARTITION BY case_id ORDER BY ptp_due_date DESC)=1""", [case_ids])}
+    owner = dict(c.execute(f'SELECT case_id, customer_id FROM gold.cases WHERE customer_id IN ({pick})', [ready]).fetchall())
+    uses, broken = {}, set()
+    for case_id, program, accepted_recent, broken_recent in c.execute(f"""SELECT case_id, program_id,
+            customer_response='accepted' AND offer_ts>?, plan_status='broken' AND coalesce(response_ts,offer_ts)>?
+            FROM curated.offers WHERE case_id IN ({pick})""",
+                                                                       [(as_of - timedelta(days=365)).replace(tzinfo=None), (as_of - timedelta(days=90)).replace(tzinfo=None),
+                                                                        list(owner)]).fetchall():
+        cid = owner[case_id]
+        if accepted_recent:
+            uses.setdefault(cid, {}).setdefault(program, 0)
+            uses[cid][program] += 1
+        if broken_recent:
+            broken.add(cid)
+    accounts = [p['primary_account_id'] for p in primary.values()]
+    opened = dict(c.execute(f"""SELECT card_account_id, open_date FROM curated.card_accounts WHERE card_account_id IN ({pick})
+        UNION ALL SELECT loan_id, any_value(origination_date) FROM curated.loan_accounts WHERE loan_id IN ({pick}) GROUP BY 1
+        UNION ALL SELECT deposit_account_id, open_date FROM curated.deposit_accounts WHERE deposit_account_id IN ({pick})""", [accounts] * 3).fetchall())
+    crm = [by_cust[cid]['crm_customer_id'] for cid in ready]
+    salary = dict(c.execute(f"""SELECT crm_customer_id, max(last_credit_date) FROM curated.salary_credit_history
+        WHERE crm_customer_id IN ({pick}) AND employer_flag='Y' GROUP BY 1""", [crm]).fetchall())
+    agents = [p.get('assigned_agent_id') for p in primary.values() if p.get('assigned_agent_id')]
+    certified = dict(c.execute(f'SELECT agent_id, vulnerable_customer_certified FROM curated.agents WHERE agent_id IN ({pick})', [agents or ['']]).fetchall())
+    programs = _rows(c, 'SELECT * FROM curated.hardship_programs', [])
+    out = {}
+    for cid in ready:
+        cust, case = dict(by_cust[cid]), primary[cid]
+        if not cust.get('time_zone'):
+            cust['time_zone'] = by_fsa.get(cust.get('fsa')) if cust.get('fsa') else by_prov.get(cust.get('province_code'))
+        promise = promises.get(case['case_id'])
+        if promise is None and case.get('current_ptp_id') and case.get('current_ptp_due_date'):
+            promise = {'ptp_id': case['current_ptp_id'], 'ptp_amount': case['current_ptp_amount'], 'ptp_due_date': case['current_ptp_due_date']}
+        elif promise is not None:
+            promise = {k: promise[k] for k in ('ptp_id', 'ptp_amount', 'ptp_due_date', 'ptp_status')}
+        opened_on = opened.get(case['primary_account_id'])
+        months = None
+        if opened_on:
+            months = (as_of.date().year - opened_on.year) * 12 + as_of.date().month - opened_on.month - (as_of.date().day < opened_on.day)
+        out[cid] = {'customer': cust, 'case': case, 'other_open_cases': [x['case_id'] for x in cases[cid][1:]], 'attempts': attempts.get(case['case_id'], []),
+                    'promise': promise, 'uses_12m': uses.get(cid, {}), 'broken_plan_90d': cid in broken, 'months_on_book': months,
+                    'last_salary_credit': salary.get(cust['crm_customer_id']), 'agent_certified': bool(certified.get(case.get('assigned_agent_id'))),
+                    'programs': programs}
+    return out
+
+
 def for_customer(c, customer_id, hardship_status):
     ctx = load(c, customer_id)
     if ctx is None:

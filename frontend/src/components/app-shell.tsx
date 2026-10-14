@@ -12,10 +12,12 @@ import {
   LogOut,
   Menu,
   MessageSquareText,
+  Search,
   Users,
   X,
   type LucideIcon,
 } from "lucide-react";
+import { CommandPalette } from "@/components/command-palette";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { canSee, useAuth, type Section } from "@/lib/auth";
@@ -38,6 +40,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { session, logout } = useAuth();
   const health = useApi<Health>("/health");
   const [open, setOpen] = useState(false);
+  const [palette, setPalette] = useState(false);
   const role = session?.user.role;
 
   const nav = (
@@ -118,7 +121,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Badge variant="outline">Checking backend…</Badge>
             )}
           </div>
-          <div className="ml-auto flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setPalette(true)}
+            className="bg-card text-muted-foreground hover:border-primary/40 ml-auto flex h-9 items-center gap-2 rounded-md border px-3 text-sm transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 sm:w-64"
+            aria-label="Search customers and pages (Ctrl K)"
+          >
+            <Search className="size-4" aria-hidden />
+            <span className="hidden sm:inline">Search customers…</span>
+            <kbd className="ml-auto hidden rounded border px-1.5 text-[0.65rem] sm:inline">Ctrl K</kbd>
+          </button>
+          <div className="flex items-center gap-3">
             <div className="text-right text-sm leading-tight">
               <p className="font-medium">{session?.user.username}</p>
               <p className="text-muted-foreground text-xs capitalize">{role}</p>
@@ -128,7 +141,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Button>
           </div>
         </header>
-        <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 outline-none sm:px-8 sm:py-10">
+        <CommandPalette open={palette} onOpenChange={setPalette} />
+        <main
+          id="main"
+          tabIndex={-1}
+          className={cn(
+            "mx-auto w-full flex-1 px-4 py-8 outline-none sm:px-8 sm:py-10",
+            pathname.startsWith("/call/") ? "max-w-[100rem] pb-0 sm:pb-0" : "max-w-6xl",
+          )}
+        >
           {children}
         </main>
       </div>

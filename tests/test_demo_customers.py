@@ -60,3 +60,17 @@ def test_timeline_is_newest_first_and_scoped(conn):
     events = customer360.timeline(conn, 'SAV-6847')['events']
     assert events and all(a['ts'] >= b['ts'] for a, b in zip(events, events[1:]))
     assert {e['kind'] for e in events} <= {'contact', 'promise', 'note', 'offer', 'case'}
+
+
+def test_set_based_loader_builds_identical_plans(conn):
+    import json
+    ids = [r[0] for r in conn.execute('SELECT DISTINCT customer_id FROM gold.cases WHERE outcome IS NULL ORDER BY hash(customer_id) LIMIT 150').fetchall()]
+    ids += [d[0] for d in DEMO]
+    many = action_plan.load_many(conn, ids)
+    for cid in ids:
+        single = action_plan.load(conn, cid)
+        assert (single is None) == (cid not in many)
+        if single is not None:
+            status = 'recorded' if single['case'].get('hardship_flag') else 'not_established'
+            assert json.dumps(action_plan.build(single, status), default=str, sort_keys=True) == \
+                json.dumps(action_plan.build(many[cid], status), default=str, sort_keys=True)
