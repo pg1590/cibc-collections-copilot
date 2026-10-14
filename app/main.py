@@ -15,7 +15,7 @@ from fastapi import Depends,FastAPI,HTTPException,Query
 from fastapi.security import HTTPAuthorizationCredentials,HTTPBearer
 from fastapi.responses import Response
 from pydantic import BaseModel,Field
-from app import storage, runtime, voice, action_plan, work_queue, portfolio_checks
+from app import storage, runtime, voice, action_plan, work_queue, portfolio_checks, call_session
 from app.features import VERSION,TEXT_FEATURES,feature_sql,evidence,definitions,text_features
 from app.settings import DATASET,DB,QUALITY,MODEL,MODEL_REPORT,ROOT,SNAPSHOT
 from datetime import date as _date,timedelta as _timedelta
@@ -341,6 +341,73 @@ def brief(body:Brief,u=Depends(user)):
         s.execute('INSERT INTO briefs(brief_id,customer_id,actor,payload,status,created_at) VALUES(?,?,?,?,?,?)',(payload['brief_id'],body.customer_id,u['username'],json.dumps(payload,default=str),'pending',storage.now()))
         storage.audit(s,u['username'],'generate_brief',payload['brief_id'],{'customer_id':body.customer_id,'model_version':VERSION,'next_action':payload['next_action'],'policy_sources':policy_sources,'hardship_status':hardship_status,'recorded_hardship_cases':recorded_cases,'recommendation_reason':recommendation_reason,'generation':payload['generation']})
     return payload
+
+
+class CallState(BaseModel):
+    customer_id:str=Field(min_length=1,max_length=100)
+    outcomes:dict=Field(default_factory=dict)
+
+
+class CallNote(BaseModel):
+    customer_id:str=Field(min_length=1,max_length=100)
+    note:str=Field(min_length=1,max_length=4000)
+
+
+class CallSubmit(CallState):
+    note:str=Field(default='',max_length=6000)
+
+
+def _call_session(c,cid,outcomes):
+    ctx=call_session.load(c,cid)
+    if ctx is None:raise HTTPException(404,'This customer has no open case to call about.')
+    bundle=joblib.load(MODEL) if MODEL.exists() else None
+    status='recorded' if ctx['case'].get('hardship_flag') else 'not_established'
+    if status=='not_established' and bundle:
+        feats=records(c,feature_sql(True),[cid])
+        note=records(c,'SELECT note_text FROM gold.latest_notes WHERE customer_id=?',[cid])
+        if feats and ((float(bundle['model'].predict_proba([[feats[0][k] for k in bundle['features']]])[0,1])>=.5) or (note and evidence(note[0]['note_text']))):status='possible'
+    return call_session.session(ctx,status,outcomes)
+
+
+@app.post('/api/call/session')
+def call_state(body:CallState,u=Depends(user)):
+    if u['role']=='analyst':raise HTTPException(403,'Call mode is for agents and supervisors.')
+    with db() as c:
+        authorize_customer(c,u,body.customer_id)
+        return _call_session(c,body.customer_id,body.outcomes)
+
+
+@app.post('/api/call/extract')
+def call_extract(body:CallNote,u=Depends(user)):
+    if u['role']=='analyst':raise HTTPException(403,'Call mode is for agents and supervisors.')
+    with db() as c:authorize_customer(c,u,body.customer_id)
+    client=runtime.provider();client.begin_trace()
+    result=call_session.extract(body.note,action_plan.AS_OF.date(),client)
+    with storage.connect() as s:storage.audit(s,u['username'],'call_extract',body.customer_id,{'provider':result['provider'],'proposals':len(result['proposals'])})
+    return result
+
+
+@app.post('/api/call/submit')
+def call_submit(body:CallSubmit,u=Depends(user)):
+    if u['role']=='analyst':raise HTTPException(403,'Call mode is for agents and supervisors.')
+    with db() as c:
+        authorize_customer(c,u,body.customer_id)
+        result=_call_session(c,body.customer_id,body.outcomes)
+    wrap=result['wrap_up']
+    if not wrap['ready_to_submit']:raise HTTPException(422,'Resolve the blocking checks before submitting: '+'; '.join(wrap['blocking'] or ['record who was reached']))
+    note=body.note.strip() or wrap['note']
+    plan=result['plan']
+    payload={'brief_id':str(uuid.uuid4()),'kind':'call','customer_id':body.customer_id,'summary':note.splitlines()[0],
+      'signals':[{'name':'outcome_codes','value':', '.join(wrap['outcome_codes']),'evidence':'call mode'}],
+      'recommendation':plan['next_action'],'recommendation_reason':'Call outcomes recorded by the agent and checked against the contact, hardship and promise rules.',
+      'hardship_status':'recorded' if result['outcomes']['hardship']['stated'] else None,'recorded_hardship_cases':[],'contact_hold':result['stage']=='blocked',
+      'policy_sources':sorted({p for ch in result['checks'] for p in ch['policy']}),'action_plan':plan,'next_action':plan['next_action'],
+      'draft':note,'call':{'outcomes':result['outcomes'],'checks':result['checks'],'follow_ups':wrap['follow_ups'],'outcome_codes':wrap['outcome_codes']},
+      'status':'pending','model':{'name':'Call mode rules','version':VERSION},'features':{},'generation':{'provider':'local','status':'local'}}
+    with storage.connect() as s:
+        s.execute('INSERT INTO briefs(brief_id,customer_id,actor,payload,status,created_at) VALUES(?,?,?,?,?,?)',(payload['brief_id'],body.customer_id,u['username'],json.dumps(payload,default=str),'pending',storage.now()))
+        storage.audit(s,u['username'],'call_submit',payload['brief_id'],{'customer_id':body.customer_id,'outcome_codes':wrap['outcome_codes'],'follow_ups':wrap['follow_ups']})
+    return {'brief_id':payload['brief_id'],'status':'pending'}
 
 
 def review_record(row):
