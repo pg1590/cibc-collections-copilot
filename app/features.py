@@ -4,16 +4,25 @@ import re
 import unicodedata
 from pathlib import Path
 
-VERSION = "c360-financial-v1"
-# Model input is these binary financial cues only. Raw free text and protected
+VERSION = "c360-financial-v2"
+# Model input is these binary hardship cues only. Raw free text and protected
 # demographic/vulnerability fields never enter the classifier's input vector.
+# v2 cues follow POL-COLL-004 v4.2 s4.2 (hardship = inability to pay after a change in
+# circumstances). Each regex must compile in Python re and DuckDB RE2: no lookaround or
+# backreferences. '.' stands in for accented letters so mojibake (U+FFFD) still matches.
+# Deliberately excluded: s4.5 vulnerability markers (crying, anxiety, "cust vulnerable -
+# financial hardship" tag, serious illness in family, bereavement) and s4.6 protected
+# grounds (disability as a status, marital status, pregnancy, religion, origin).
 PATTERNS = {
-    "income_loss": r"job loss|lost (my |their |his |her |the )?job|laid off|layoff|position eliminated|unemploy|perdu (mon |son |leur )?emploi|perte d.emploi|licenci",
-    "income_reduction": r"hours (were |have been |got )?cut|reduced hours|fewer hours|hours reduced|reduced income|pay cut|reduction.*(hours|income)|heures.*redui|baisse.*revenu|salaire.*redui",
-    "income_delay": r"pay.*late|payroll.*delay|salary.*delay|pay.*delay|waiting.*(pay|salary|income)|paye.*retard|salaire.*retard",
-    "payment_difficulty": r"cannot (afford|pay)|can.t (afford|pay)|unable to pay|no money|not enough money|financial (hardship|difficult)|struggling.*pay|difficulte.*financ|ne peux pas payer|pas.*argent",
-    "hardship_request": r"hardship|payment relief|payment deferral|reduced payment|payment reduction|allegement|report de paiement|paiement reduit",
-    "expense_pressure": r"rent.*(increase|raised|higher)|unexpected (expense|bill)|cost.*(rise|increase)|loyer.*(hausse|augment)|depense.*imprevu",
+    "income_loss": r"job loss|lost (my |their |his |her |the |a )?job|laid off|layoff|position (was )?eliminated|unemploy|out of work|no income|on strike|lockout|locked out|perdu (mon |son |leur |sa |un )?(emploi|travail)|perte d.emploi|licenci|mis . pied|sans emploi|ch.mage|pas de revenu|en gr.ve|lock-out",
+    "income_reduction": r"(hours|shifts?) (were |was |have been |got |are )?(cut|reduced)|(reduced|fewer|less|cut) (hours|shifts|pay|income|wages?)|(pay|wages?|salary|income) (was |were |has been |got )?(cut|reduced|dropped)|pay cut|lost (his |her |their |my )?overtime|only getting \d+ days|(one|single) income|reduction.{0,30}(hours|income)|heures.{0,30}(r.dui|coup)|moins d.heures|baisse.{0,30}revenu|salaire.{0,30}r.dui|seul revenu|revenu.{0,20}(baisse|diminu)",
+    "income_delay": r"\bpay(check|cheque|roll)? (is |was |has been |came )?late|late (pay|salary|wages)|payroll.{0,20}delay|salary.{0,20}delay|\bpay(check|cheque|day)? (is |was |has been )?delayed|waiting (on|for) (my |his |her |their )?(pay|salary|income|wages|ei|employment insurance|benefits)|\bei\b.{0,20}not started|applied for (ei|employment insurance|benefits)|\bei claim|paye.{0,20}retard|salaire.{0,20}retard|attend (l.)?(ae|assurance.emploi|prestations|paye|salaire)|en attente (de |des |d.)(l.)?(ae|assurance.emploi|prestations)",
+    "payment_difficulty": r"cannot (afford|pay)|can.t (afford|pay)|unable to (afford|pay)|no money|not enough money|financial difficult|struggling|(money|budget|finances) (is |are )?(very |really |a bit )?tight|tight (budget|month)|things are (hard|tough|difficult)|difficult.{0,3}financ|difficile.{0,3}financ|financi.rement difficile|ne (peux|peut|pouvons) pas payer|c.est serr|serr. ce mois|pas.{0,15}argent|fins? de mois difficile",
+    "hardship_request": r"hardship (te|ta|op|pro|pla|ass|rel|req|spe|app|arr)|(asked|asks|request(ed|s)?|applied) (about |for )?(a )?hardship|payment relief|payment deferral|defer(ral| the| my)? (payment|pmt)|(reduced|lower|smaller) (payment|pmt)|payment reduction|(pmt|payment) (can|could) be (reduced|lowered)|reduce (the |my |his |her |their )?(pmt|payment)|all.gement|report de paiement|paiement r.duit|(pmt|paiement) peut .tre r|r.duire (le |son |mon )?(pmt|paiement)|.quipe.{0,3}diff?icult",
+    "expense_pressure": r"\brent.{0,20}(increase|raised|higher|went up)|unexpected (expense|bill|cost)|\bcosts?.{0,20}(rise|rising|increase)|rate reset|renewed at (a )?higher rate|(payment|pmt|mortgage)s? (went|has gone|goes|gone) up|payment (increase|shock)|higher (interest )?rate|loyer.{0,20}(hausse|augment)|d.pense.{0,20}impr.vu|taux plus .lev|hausse (du |de )?(taux|paiement)|renouvel.{0,40}taux",
+    "illness_or_injury": r"off work sick|sick leave|on (medical|sick|disability) leave|medical leave|in (the )?hospital|hospitali|surgery|injur(y|ed)|(short|long).term disability|disability (claim|benefit|leave)|unable to work|accident (at work|de travail)|arr.t (de travail|maladie)|cong. (de )?maladie|invalidit. (de )?(courte|longue)|blessure|chirurgi",
+    "separation": r"s.paration|separating|split (up )?(w/|with|from) (my |his |her |their )?(partner|spouse|husband|wife)|(getting|going through a|going thru a) divorce|divorcing",
+    "disaster_or_evacuation": r"flood|wildfire|forest fire|house fire|evacu|natural disaster|hurricane|tornado|earthquake|storm damage|inond|feux de for.t|cause des feux|incendie|catastrophe|sinistr",
 }
 TEXT_FEATURES = list(PATTERNS)
 
