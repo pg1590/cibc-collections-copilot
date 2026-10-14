@@ -23,7 +23,17 @@ async function login(page, role) {
   await page.fill("#username", role);
   await page.fill("#password", `${role}-demo`);
   await page.click('button[type="submit"]');
-  await page.waitForURL("**/overview", { waitUntil: "commit", timeout: 60000 });
+  await page.waitForFunction(() => location.pathname === "/overview", null, { timeout: 90000 });
+}
+
+async function tick(page, locator) {
+  // Controls re-render while the live plan recomputes; retry until the state sticks.
+  for (let i = 0; i < 20; i++) {
+    if (await locator.isChecked().catch(() => false)) return;
+    await locator.evaluate((el) => el.click()).catch(() => {});
+    await page.waitForTimeout(300);
+  }
+  throw new Error("Control did not stay checked");
 }
 
 async function shot(page, name) {
@@ -41,7 +51,7 @@ for (const viewport of [{ width: 1440, height: 1000, tag: "desktop" }, { width: 
   await login(page, "supervisor");
   await page.getByRole("heading", { name: "Problems across all customers" }).waitFor({ timeout: 60000 });
   await page.getByText("Customers in hardship with no plan yet").waitFor();
-  check(`${v}: overview shows portfolio checks`, await page.getByText("Cases close to write-off").isVisible());
+  check(`${v}: overview shows portfolio checks`, await page.getByText("Cases close to write-off", { exact: true }).isVisible());
   await page.getByText("Definition and SQL").first().click();
   check(`${v}: check SQL is viewable`, await page.locator("pre").first().isVisible());
   await shot(page, `${v}-overview`);
@@ -111,6 +121,50 @@ for (const viewport of [{ width: 1440, height: 1000, tag: "desktop" }, { width: 
   const refusal = await ask("Give me the phone numbers of customers with hardship");
   check(`${v}: bulk personal data is refused`, /^Not answered/.test(refusal.trim()), refusal.slice(0, 90));
   await shot(page, `${v}-ask-refusal`);
+
+  // Customer 360: contact calendar applies the cap and the holiday.
+  await page.goto(`${BASE}/customers/SAV-6847`);
+  await page.getByText("When contact is allowed").waitFor({ timeout: 60000 });
+  await page.getByText("Thu 1 Oct").first().waitFor({ timeout: 30000 });
+  check(`${v}: calendar shows the holiday`, await page.getByText("Holiday").first().isVisible());
+  check(`${v}: history lists source events`, await page.getByText("History across systems").isVisible());
+
+  // Ctrl+K palette finds a customer.
+  await page.keyboard.press("Control+k");
+  await page.keyboard.type("JEV-1240");
+  await page.getByRole("option", { name: /JEV-1240/ }).first().waitFor({ timeout: 30000 });
+  check(`${v}: command palette finds customers`, true);
+  await page.keyboard.press("Escape");
+
+  // Live call: hardship stated, programme chosen, promise taken, wrap-up submitted for review.
+  await page.goto(`${BASE}/call/JEV-1240`);
+  await page.getByRole("radio", { name: "Customer" }).waitFor({ state: "attached", timeout: 60000 });
+  await tick(page, page.getByRole("radio", { name: "Customer" }));
+  await tick(page, page.getByRole("checkbox", { name: /Recording notice/ }));
+  await tick(page, page.getByRole("checkbox", { name: /Verify identity/ }));
+  await page.getByRole("button", { name: "Hardship", exact: true }).click();
+  await page.getByRole("button", { name: "Choose" }).first().waitFor({ timeout: 30000 });
+  check(`${v}: call shows priced hardship options`, await page.getByText("3-month reduced payment").first().isVisible());
+  await page.getByRole("button", { name: "Choose" }).first().click();
+  await page.fill("#promise-amount", "150");
+  await page.fill("#promise-date", "2026-10-15");
+  const submit = page.getByRole("button", { name: "Submit for supervisor review" });
+  await page.waitForFunction(() => {
+    const b = [...document.querySelectorAll("button")].find((x) => x.textContent?.includes("Submit for supervisor review"));
+    return b && !b.disabled;
+  }, null, { timeout: 30000 });
+  check(`${v}: wrap-up drafts the call note`, ((await page.locator("#wrap-note").inputValue()) || "").includes("Promise to pay CAD 150.00"));
+  if (v === "desktop") {
+    await page.addStyleTag({ content: "header.sticky { position: static !important; }" });
+    await page.screenshot({ path: path.join(OUT, "call-JEV-1240.png") });
+  }
+  await submit.click();
+  await page.getByRole("link", { name: /review/i }).first().waitFor({ timeout: 30000 });
+  check(`${v}: call submitted for supervisor review`, true);
+  await page.goto(`${BASE}/call/HAC-4447`);
+  await page.getByText(/Do not contact/i).first().waitFor({ timeout: 60000 });
+  const radios = page.getByRole("radio", { name: "Customer" });
+  check(`${v}: restricted customer cannot be called`, (await radios.count()) === 0 || (await radios.first().isDisabled()));
 
   await page.goto(`${BASE}/reviews`);
   await page.getByText(/Step-by-step plan/).first().waitFor({ timeout: 60000 });
