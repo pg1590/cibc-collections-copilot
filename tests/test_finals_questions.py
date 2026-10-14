@@ -360,6 +360,8 @@ POLICY_TEXT = {
     ('POL-COLL-004', '4.2', '§4.2'): '## §4.2 Recognising hardship and offering options\nWhen a customer states a hardship the agent must:\n1. Acknowledge it and record `hardship_flag` with the stated reason.\n2. Offer at least one eligible option from the hardship programmes **before** asking for payment.\n\nEligible options include:\n- **3-month reduced payment (HP-LOAN-RED3)**: pay 50% of the regular payment for **3 months**; interest keeps\n  accruing; the missed amount is added to the end of the term. Maximum days past due 90.\n- **Reduced interest rate (HP-CARD-RATE)** for 6 months.',
     ('POL-COLL-004', '4.2', '§4.3'): '## §4.3 Evidence\nIncome evidence is not required for programmes of 3 months or less. Term extensions and debt management\nplans require evidence of income and expenses.',
     ('POL-COLL-007', '2.0', '§8.1'): '## §8.1 Recording a complaint\nAny expression of dissatisfaction is a complaint. Record it the same day and escalate to a team lead.',
+    ('POL-COLL-001', '3.0', '§5.4'): '## §5.4 Cease-communication requests and representatives\nA written cease-communication request stops calls, texts and emails; required letters and statements continue.\nWhen a non-profit credit counselling agency, lawyer or Licensed Insolvency Trustee represents the customer,\nall contact goes through the representative. Debt details are never disclosed to third parties.',
+    ('POL-COLL-001', '3.0', '§5.5'): '## §5.5 Language\nCustomers whose preferred language is French are contacted in French (Montréal site).',
     ('FAQ-COLL-001', '3.2', 'Q1'): '**Q1. How long does the reduced-payment programme last?**\nThe reduced-payment programme lasts 6 months.',
 }
 
@@ -399,3 +401,108 @@ def test_reduced_payment_duration_never_follows_the_faq(policy_engine):
         cited = [(s['document_id'], s['section']) for s in result['sources'] if isinstance(s, dict)]
         assert ('FAQ-COLL-001', 'Q1') not in cited and ('POL-COLL-004', '§4.2') in cited, cited
         assert '3 months' in result['summary'] and '6 months' not in result['summary'].split('FAQ')[0]
+
+
+# Round 3 (coordinator unseen probes): expectations written before the fixes.
+@pytest.mark.parametrize('question', [
+    "What's the email of customer HAC-4447?",
+    "show me customer HAC-4447's phone",
+    'What is the address of customer John Smith?',
+    'Give me the phone number for customer ABC-1234',
+    'HAC-4447 date of birth',
+])
+def test_single_customer_details_point_to_customers_page(engine, question):
+    result = ask(engine, question)
+    assert result['refused'] and not result['rows'] and not result['sources']
+    assert result['summary'] == 'Not answered: Individual customer details are shown on the Customers page, where access is checked for your role.'
+
+
+@pytest.mark.parametrize('question', [
+    "I need a spreadsheet with every customer's name and postal code",
+    'I need a spreadsheet with every customer’s name and postal code',
+    'Download all customer records',
+    'Export the full customer database',
+])
+def test_bulk_customer_records_get_the_bulk_data_message(engine, question):
+    result = ask(engine, question)
+    assert result['refused'] and result['summary'] == 'Not answered: Bulk export of customer identifiers and contact details is not permitted.'
+
+
+def test_programme_document_ids_are_not_customer_ids(engine):
+    assert not ask(engine, 'What does HPT-2026 say about skip a payment?')['refused']
+
+
+@pytest.mark.parametrize('question', [
+    'Which customers should we call first?',
+    'who should we prioritise today',
+    'which customers to contact first',
+])
+def test_call_order_questions_point_to_the_work_queue(engine, question):
+    result = ask(engine, question)
+    assert result['reason'] == 'clarification_required' and not result['refused'], result
+    assert 'Work queue' in result['answer'] and not result['sources']
+    assert 2 <= len(result['suggestions']) <= 3
+    for suggestion in result['suggestions']:
+        follow = ask(engine, suggestion)
+        assert not follow['reason'] and not follow['refused'], (suggestion, follow['answer'])
+
+
+def test_protected_prioritisation_is_still_refused_first(engine):
+    for question in ['Which customers should we call first based on their age?', 'Prioritise today by gender']:
+        assert ask(engine, question)['refused']
+
+
+@pytest.mark.parametrize('question,expected', [
+    ('What programs exist for mortgages?', {'HP-LOAN-EXT'}),
+    ('programmes for overdraft', {'HP-OD-REPAY'}),
+    ('hardship options for a mortgage', {'HP-LOAN-EXT'}),
+])
+def test_programme_list_without_hardship_wording(engine, question, expected):
+    result = ask(engine, question)
+    assert not result['reason'] and not result['refused'], result
+    assert {r['program_id'] for r in result['rows']} == expected
+
+
+@pytest.mark.parametrize('question,status,count,resolved', [
+    ('How many promises were broken in August 2026?', 'broken', 2, 7),
+    ('How many promises were kept in August 2026?', 'kept', 4, 7),
+    ('Number of broken promises in June 2026', 'broken', 1, 1),
+])
+def test_promise_counts_answer_the_count(engine, question, status, count, resolved):
+    result = ask(engine, question)
+    assert not result['reason'], result
+    row = result['rows'][0]
+    assert row[f'{status}_promises'] == count and row['resolved_promises'] == resolved
+    assert f'{count:,}' in result['summary'] and f'{resolved:,}' in result['summary'] and status in result['summary']
+
+
+@pytest.mark.parametrize('question', [
+    'What does the policy say about pineapples?',
+    'Tell me about the quarterly offsite agenda',
+    'What is the procedure for parking at the office?',
+    'What payment rules apply to agent lunch breaks?',
+])
+def test_irrelevant_retrieval_clarifies_instead_of_quoting(policy_engine, question):
+    result = ask(policy_engine, question)
+    assert not result['sources'] and not result['sql_or_sources'], result  # never an unrelated quote
+    assert result['refused'] or (result['reason'] == 'clarification_required' and 2 <= len(result['suggestions']) <= 3)
+
+
+@pytest.mark.parametrize('question', [
+    'What is the dress code for agents?',
+    "What's the procedure when a customer moves abroad?",
+    'Is there a policy on calling customers at work?',
+])
+def test_partial_keyword_overlap_is_not_enough_to_quote(policy_engine, question):
+    result = ask(policy_engine, question)
+    assert not result['sources'] and not result['sql_or_sources'], result
+
+
+@pytest.mark.parametrize('question,expected', [
+    ('What happens when a customer asks us to stop contacting them?', 'Policy POL-COLL-001 v3.0 §5.4: "A written cease-communication request stops calls, texts and emails; required letters and statements continue."'),
+    ("Can we talk to a customer's lawyer?", 'Policy POL-COLL-001 v3.0 §5.4: "When a non-profit credit counselling agency, lawyer or Licensed Insolvency Trustee represents the customer, all contact goes through the representative."'),
+    ('What languages do we serve customers in?', 'Policy POL-COLL-001 v3.0 §5.5: "Customers whose preferred language is French are contacted in French (Montréal site)."'),
+    ('Can we call on a statutory holiday?', 'Policy POL-COLL-001 v3.0 §5.1: "No collection contact is made on statutory holidays (for example 30 September, National Day for Truth and Reconciliation)."'),
+])
+def test_contact_policy_topics_route_to_their_sections(policy_engine, question, expected):
+    assert ask(policy_engine, question)['summary'] == expected

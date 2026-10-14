@@ -350,6 +350,9 @@ def _stem(word):
 def _terms(text):return [_stem(w) for w in re.findall(r'[a-z0-9]+',text.lower()) if w not in QUESTION_STOP]
 
 
+GENERIC_TERMS={_stem(w) for w in 'customer customers client clients contact contacts contacted payment payments pay paid agent agents call calls called phone collect collected collection collections account accounts case cases policy policies procedure procedures rule rules bank money need needs want get first today now exist exists available option options program programs programme programmes plan plans record records detail details information info email address name names number time day days week weeks month months year make take give show tell know use help happen happens allow allowed apply applies say says about thing things way ok okay please explain which what when where who why how contacting calling paying collecting asking'.split()}
+
+
 def _source_sentences(text):
     """Exact source sentences: markdown emphasis removed, wrapped lines joined, headings/notes/questions skipped."""
     units,table=[],0
@@ -469,6 +472,9 @@ def _summarize(rows,meta,refused=None,clarification=None):
     if clarification:return 'I need a clearer question: '+first_sentence(clarification)
     if not rows:return 'No records matched this question for the requested period.'
     meta=meta or {};columns=list(rows[0]);kind=meta.get('kind')
+    if kind=='promise_count':
+        status=meta['metric_id'].replace('_promises','');row=rows[0]
+        return f"{_num(row[status+'_promises'])} promises due {period_label(meta)[3:] if period_label(meta).startswith('in ') else period_label(meta)} were {status.replace('_',' ')}, out of {_num(row['resolved_promises'])} resolved ({_value(row[status+'_rate_pct'],'pct')})."
     if kind=='hardship_programmes':
         names=', '.join(f"{r['program_name']} ({r['program_id']}, {r['duration_months']} month{'s' if r['duration_months']!=1 else ''})" for r in rows)
         scope=meta.get('products_label') or 'all products'
@@ -543,15 +549,19 @@ PROVINCES=('AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT')
 CUSTOMER_PROVINCE="CASE upper(replace(trim(province),'.','')) WHEN 'ONT' THEN 'ON' WHEN 'ONTARIO' THEN 'ON' WHEN 'ALTA' THEN 'AB' WHEN 'ALBERTA' THEN 'AB' WHEN 'QUEBEC' THEN 'QC' WHEN 'QUÉBEC' THEN 'QC' WHEN 'PQ' THEN 'QC' WHEN 'MAN' THEN 'MB' WHEN 'SASK' THEN 'SK' WHEN 'NFLD' THEN 'NL' ELSE coalesce(upper(replace(trim(province),'.','')),'unknown') END"
 PROGRAMME_PRODUCTS=[(r'credit cards?|\bcards?\b',['card']),(r'personal loans?',['personal_loan']),(r'(?:auto|car|vehicle) loans?',['auto_loan']),(r'lines? of credit|\blocs?\b|credit lines?',['loc']),(r'mortgages?',['mortgage']),(r'overdrafts?',['overdraft']),(r'\bloans?\b',['personal_loan','auto_loan'])]
 PRODUCT_LABELS={'card':'cards','personal_loan':'personal loans','auto_loan':'auto loans','loc':'lines of credit','mortgage':'mortgages','overdraft':'overdrafts'}
+WORK_QUEUE=r'\b(?:which|what)\s+(?:\w+\s+)?(?:customers|accounts|cases|clients|borrowers|debtors)\b.*\b(?:call|contact|phone|prioriti[sz]\w*|chase|work|reach)\w*\b|\bwho\s+(?:should|do|must|to)\s+(?:we\s+|i\s+)?(?:call|contact|prioriti[sz]e|chase|phone|work)\b|(?<!not )\b(?:call|contact|work)\s+(?:list|order)\b'
+WORK_QUEUE_SUGGESTIONS=['How many open cases are there by bucket?','How many open cases have recorded hardship by queue?','What is the average days past due of open cases by queue?']
 DEFAULT_SUGGESTIONS=['What was the promise-kept rate in August 2026 by queue?','Which province has the highest cure rate in August 2026?','How many open cases are there by bucket?']
 
 
 def programme_intent(q):
     """List questions about available hardship programmes, not terms of a named programme."""
+    product=any(re.search(p,q) for p,_ in PROGRAMME_PRODUCTS)
     named=re.search(r'\bprogramm?es?\b|\bprograms?\b|\b(?:plans?|options?|arrangements?)\b',q) and re.search(r'\bhardship\b|\brelief\b|\bassistance\b',q)
-    product=re.search(r'\bwhat\s+(?:can|could)\s+(?:a|the|this)\s+customer\s+with\s+(?:an?\s+)?.+\b(?:get|have|receive|be offered)\b',q) and any(re.search(p,q) for p,_ in PROGRAMME_PRODUCTS)
-    return bool((named or product)
-        and re.search(r'\bavailable\b|\b(?:which|what)\b|\blist\b|\btypes? of\b|\bkinds? of\b',q)
+    listed=re.search(r'\bprogramm?es?\b|\bprograms?\b|\b(?:hardship|relief|payment)\s+(?:plans?|options?)\b|\boptions?\b',q) and product
+    getting=re.search(r'\bwhat\s+(?:can|could)\s+(?:a|the|this)\s+customer\s+with\s+(?:an?\s+)?.+\b(?:get|have|receive|be offered)\b',q) and product
+    return bool((named or listed or getting)
+        and (product or re.search(r'\bavailable\b|\b(?:which|what)\b|\blist\b|\btypes? of\b|\bkinds? of\b',q))
         and not re.search(r'how long|duration|\blast\b|income|evidence|how much|share of|how many|\brate\b|\bcount\b|before asking|\bcases?\b|\bstop\b|\bmust\b|\bshould\b|\brequire\w*|\bspecialists?\b|\breview\w*',q))
 
 
@@ -612,13 +622,20 @@ class InsightEngine:
         if re.search(r'\bvulnerab\w*\b',q) and re.search(r'\bbottom\b|deprioriti[sz]|lower.*priority|less.*priority|prioriti[sz].*(?:call|repay)|predict.*(?:pay|repay)|rarely pay|\bskip|call.*last|remove.*dial',q):return 'Vulnerability is a safeguard, not a repayment risk factor. Do not deprioritize support or use vulnerability to predict repayment; route to a certified agent under POL-COLL-004 v4.2 §4.5.'
         if re.search(r'(stop|exclude|deny|withdraw|withhold).*hardship|hardship.*(stop offering|exclude|deny)|(?:do not|don.t|never|avoid)\s+(?:offer|provide|give)\b.*hardship',q):return 'Hardship support cannot be denied using geography or a proxy for protected grounds.'
         if re.search(r'\b(export|list|give|show)\b',q) and re.search(r'\b(every|all)\b',q) and re.search(r'\b(phone|email|address|names)\b|date of birth|\bdob\b',q):return 'Bulk export of customer identifiers and contact details is not permitted.'
-        pii=r"(?:phone|telephone|mobile|cell(?:phone)?|contact)\s*(?:numbers?|details|info\w*)|\be-?mails\b|\be-?mail\s+address(?:es)?|\baddress(?:es)?\b|\bnames\b|\bsurnames?\b|\bsins?\b|social insurance numbers?|dates?\s+of\s+birth|\bdobs?\b|birthdays?|\b(?:account|card|chequing|bank)\s+numbers?"
+        detail=r"phone(?:\s+numbers?)?|e-?mail(?:\s+address)?|(?:home\s+|mailing\s+)?address|\bname\b|surname|\bsin\b|social insurance number|date of birth|\bdob\b|birthday|account numbers?|card numbers?|contact (?:details|info\w*)|details|record|profile|postal code|balance"
+        named=(re.search(r'(?:'+detail+r')\b.{0,25}\b(?:of|for)\s+(?:the\s+)?customer\s+(?!(?:with|who|in|that|on|at|whose|are|is|has|have|named|complaints?|cases?|accounts?|service|support|contact|consent|hardship|vulnerab\w*|segment\w*)\b)[a-z][\w-]*',q)
+            or re.search(r"\bcustomer\s+[a-z][\w-]*(?:\s+[a-z]+)?['’]s\s+(?:"+detail+')',q))
+        if (re.search(r'\b(?!hpt-)[a-z]{3}-\d{4}\b',q) and re.search(detail+r'|\bcustomer\b',q)) or named:
+            return 'Individual customer details are shown on the Customers page, where access is checked for your role.'
+        pii=r"(?:phone|telephone|mobile|cell(?:phone)?|contact)\s*(?:numbers?|details|info\w*)|\be-?mails\b|\be-?mail\s+address(?:es)?|\baddress(?:es)?\b|\bnames\b|\bsurnames?\b|\bsins?\b|social insurance numbers?|dates?\s+of\s+birth|\bdobs?\b|birthdays?|\b(?:account|card|chequing|bank)\s+numbers?|postal codes?"
         people=r'(?:customers|clients|borrowers|debtors|customer|client|borrower)\b'
         requested=(re.search(r'(?:'+pii+r')\s+(?:\w+\s+){0,2}?(?:of|for|from|belonging to)\s+(?:\w+\s+){0,3}?'+people,q)
             or re.search(r"\b(?:customers?|clients?|borrowers?)(?:'s|')?\s+(?:"+pii+')',q)
             or (re.search(r'\bwho are (?:the|our|these|all)\s+(?:\w+\s+)?(?:customers|clients|borrowers)\b',q) and re.search(pii,q)))
         listed=re.search(r'\b(?:list|export|dump|download|pull)\s+(?:me\s+)?(?:the\s+|all\s+(?:the\s+)?|every\s+|of\s+)?(?:customers|clients|borrowers)\b|\b(?:give|show|send)\s+me\s+(?:a\s+list\s+of\s+|the\s+|all\s+(?:the\s+)?)?(?:customers|clients|borrowers)\s+(?:with|who|in|that|on)\b|\blist of (?:customers|clients|borrowers)\b',q)
-        if (requested or listed) and not re.search(r'^\s*(?:how many|what share|what percentage|what proportion|what fraction)\b|\bnumber of\b',q):
+        records=(re.search(r"\b(?:all|every|entire|full|whole)\s+(?:the\s+|our\s+)?customer(?:s|['’]s)?\s+(?:records?|data|details|profiles?|information|info|list|database|files?|names?|postal codes?|addresses|e-?mails|phones?)\b",q)
+            or (re.search(r'spreadsheet|\bcsv\b|excel|\bfile\b|download|export',q) and re.search(r'\b(?:every|all|each)\s+customer',q)))
+        if (requested or listed or records) and not re.search(r'^\s*(?:how many|what share|what percentage|what proportion|what fraction)\b|\bnumber of\b',q):
             return 'Bulk export of customer identifiers and contact details is not permitted.'
         if re.search(r'ignore.*(instruction|policy)|read_(csv|text|parquet)|/etc/|\b(attach|drop table|delete from|update .*set)\b',q):return 'This interface accepts collections questions, not commands, files or arbitrary SQL.'
         return None
@@ -637,6 +654,8 @@ class InsightEngine:
                 elif programme_intent(lower):
                     self._programmes(lower,result)
                 else:
+                    if re.search(WORK_QUEUE,lower):
+                        raise PlanError('Call order is set on the Work queue page, which orders assigned cases by fixed policy rules (holds, contact limits, promises due). This question box answers portfolio-level questions.')
                     agent_ranking(lower)
                     rank=ranking(lower);plan_q=rank['question'] if rank else lower
                     case_count=bool(re.search(r'\bcases?\b',plan_q) and re.search(r'how many|count|number|total|how much',plan_q))
@@ -743,7 +762,7 @@ class InsightEngine:
 
     def _plan(self,q):
         q=q.lower()
-        counted=self._count_plan(q)
+        counted=self._count_plan(q) or self._promise_count_plan(q)
         if counted:return counted
         trend=trend_kind(q)
         if trend:
@@ -917,6 +936,18 @@ class InsightEngine:
         meta={'kind':'count','metric_id':column,'grouping':'province' if group else 'none','filters':filters}
         return Plan(sql,[filters['province']] if filters else [],note,meta)
 
+    def _promise_count_plan(self,q):
+        """How many promises due in a period were broken/kept, with the resolved denominator and rate."""
+        if not re.search(r'\b(?:how many|number of|count of|count)\b',q) or not re.search(r'\bpromises?\b|\bptps?\b',q) or re.search(r'\brates?\b|\bshare\b|percent',q) or prior_broken_cohort(q) or template_cohort(q):return None
+        status='partially_kept' if re.search(r'partial',q) else 'broken' if re.search(r'\bbroken\b|\bbroke\b',q) else 'kept' if re.search(r'\bkept\b',q) else None
+        if not status:return None
+        if requested_dimensions(q) or province_filter(q):raise PlanError('Promise counts are available for the whole portfolio and one period. For groupings or a province, ask for the promise-kept or broken-promise rate, which reports resolved promises per group.')
+        start,end=date_range(q)
+        if start>=end:raise PlanError('The requested period is reversed or falls after the dataset snapshot.')
+        sql=f"SELECT count(*) FILTER (WHERE ptp_status='{status}') {status}_promises, count(*) resolved_promises, round(100.0*avg(CASE WHEN ptp_status='{status}' THEN 1 ELSE 0 END),1) {status}_rate_pct FROM curated.promises_to_pay WHERE ptp_due_date>=? AND ptp_due_date<? AND ptp_status IN {RESOLVED}"
+        note='Counts promises by due date; resolved means kept, partially kept or broken (open and cancelled promises are excluded).'+('' if explicit_period(q) else ' No period was supplied; this answer uses the snapshot month to date.')
+        return Plan(sql,[start,end],note,{'kind':'promise_count','metric_id':f'{status}_promises','grouping':'none','start_date':start.isoformat(),'end_date':end.isoformat()})
+
     def _trend_plan(self,q,kind):
         metric=None if template_cohort(q) else detect_metric(q,strict=kind=='explicit')
         if metric is None and kind=='explicit' and re.search(r'\bopen\b.*\bcases?\b',q):metric='open_cases'
@@ -970,6 +1001,7 @@ class InsightEngine:
         try:
             if self._refusal(lower):return False
             if programme_intent(lower):return True
+            if re.search(WORK_QUEUE,lower):return False
             agent_ranking(lower);rank=ranking(lower);pq=rank['question'] if rank else lower
             plan=self._plan(pq)
             if plan is None or (rank and not getattr(plan,'metadata',None)):return False
@@ -989,7 +1021,7 @@ class InsightEngine:
         elif start and end>start:period=f' from {start.isoformat()} to {(end-timedelta(days=1)).isoformat()}'
         else:
             last=ASOF.replace(day=1)-timedelta(days=1);period=f' in {calendar.month_name[last.month]} {last.year}'
-        candidates=[]
+        candidates=list(WORK_QUEUE_SUGGESTIONS) if re.search(WORK_QUEUE,q) else []
         if re.search(r'\bcustomers?\b|\bclients?\b',q) and re.search(r'how many|number of|count',q):
             candidates+=['How many customers do we have?','How many customers have open cases?','How many customers do we have by province?']
         if re.search(PEOPLE,q) and not metric and not re.search(r'how many|number of|count',q):
@@ -1029,7 +1061,7 @@ class InsightEngine:
 
     def _policy(self,q,result):
         unsupported='I could not match this to a supported measure. Supported: promise-kept and broken-promise rates, right-party contact and PTP rates, cost per contact or RPC, cure, hardship, delinquency and write-off rates, average DPD, attempts per case, days to cure, open-case counts and overdue totals, customer and agent counts, hardship programmes, and collections policy topics.'
-        if not re.search(r'collection|hardship|call|contact|promise|\bptp|broken|payment|phone|\bsms\b|text message|consent|bankrupt|consumer proposal|fraud|dispute|complaint|grace|metric|financial|dialer|agent|programme|program|policy|procedure|accommodation|accessibility|dncl|casl|e-?mail|voicemail|remind|letter',q):
+        if not re.search(r'collection|hardship|call|contact|promise|\bptp|broken|payment|phone|\bsms\b|text message|consent|bankrupt|consumer proposal|fraud|dispute|complaint|grace|metric|financial|dialer|agent|programme|program|policy|procedure|accommodation|accessibility|dncl|casl|e-?mail|voicemail|remind|letter|lawyer|represent|trustee|counsell?or|language|french|holiday|cease',q):
             if re.search(r'\b(?:rate|ratio|share|percentage|kpi|metric)\b',q):
                 result.update(answer=unsupported,reason='clarification_required');return
             reason='This question is outside the collections dataset and policies.'
@@ -1040,8 +1072,10 @@ class InsightEngine:
         elif 'casl' in q or 'email' in q and 'consent' in q:preferred=[('POL-COLL-001','§5.3')]
         elif 'national do not call' in q or 'dncl' in q:preferred=[('POL-COLL-001','§5.3')]
         elif 'consumer proposal' in q or 'bankruptcy' in q:preferred=[('POL-COLL-001','§7.3')]
+        elif re.search(r'\bcease\b|stop (?:contacting|calling|texting|emailing)|(?:not|never) (?:to )?(?:contact|call) (?:them|him|her|me)\b|do not contact|lawyer|legal representative|\brepresent\w*|trustee|counsell?or|third[- ]part|power of attorney',q):preferred=[('POL-COLL-001','§5.4')]
+        elif re.search(r'\blanguages?\b|\bfrench\b|\bfrancophone',q):preferred=[('POL-COLL-001','§5.5')]
         elif re.search(r'attempt|calls?\b|phone|contact|reach',q) and re.search(r'week|7[- ]days?|seven days',q):preferred=[('POL-COLL-001','§5.2')]
-        elif re.search(r'calling hours|call.*(?:before|after)\s*\d|permitted.*hours|hours.*(?:call|contact)|(?:call|contact).*hours|sundays?',q):preferred=[('POL-COLL-001','§5.1')]
+        elif re.search(r'calling hours|call.*(?:before|after)\s*\d|permitted.*hours|hours.*(?:call|contact)|(?:call|contact).*hours|sundays?|statutory holidays?',q):preferred=[('POL-COLL-001','§5.1')]
         elif re.search(r'income.*evidence|evidence.*income|proof.*income|income.*proof',q):preferred=[('POL-COLL-004','§4.3'),('POL-COLL-004','§4.2'),('HPT-2026','document')]
         elif 'hours' in q and ('cut' in q or 'reduced' in q) or 'before' in q and 'payment' in q:preferred=[('POL-COLL-004','§4.2')]
         elif '3-month' in q or re.search(r'reduced[- ]payment',q):preferred=[('POL-COLL-004','§4.2'),('HPT-2026','document')]
@@ -1054,6 +1088,12 @@ class InsightEngine:
         if not matches and self.index:
             scores=self.index.get_scores(tokens(q));ranked=sorted(range(len(scores)),key=lambda i:scores[i],reverse=True)
             matches=[self.sections[i] for i in ranked[:2] if scores[i]>2 and self.sections[i]['language']=='EN']
+            # Keyword retrieval must have one quotable sentence covering most topical (non-generic) question terms.
+            topical=set(w for w in _terms(q) if w not in GENERIC_TERMS and len(w)>=3)
+            def covered(section):return max([len({w for w in topical if any(_match(w,t) for t in _terms(x))}) for x in _source_sentences(summarize_policy(section['text'],q))] or [0])
+            matches=[s for s in matches if topical and 2*covered(s)>len(topical)]
+            if not matches:
+                result.update(answer='I could not find a policy section or supported measure that answers this. '+unsupported.split('. ',1)[1],reason='clarification_required');return
         if any((s['id'],s['section'])==('FAQ-COLL-001','Q1') for s in matches):
             # FAQ Q1 (6 months) conflicts with POL-COLL-004 §4.2 and the programme table (3 months); policy prevails.
             policy=[s for s in self.sections if (s['id'],s['section'])==('POL-COLL-004','§4.2') and s['language']=='EN']
