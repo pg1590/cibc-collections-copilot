@@ -15,9 +15,8 @@ from reportlab.pdfbase.ttfonts import TTFont
 from pypdf import PdfReader
 
 
-def export():
-    source = ROOT / 'docs/demo-walkthrough.md'
-    output = ROOT.parent / 'deliverables/AddaWale-Video-Script.pdf'
+def export(source=ROOT / 'docs/archive/prelim/demo-walkthrough.md', output=ROOT.parent / 'deliverables/AddaWale-Video-Script.pdf',
+           label='HAC-4447 recording aid - read only the narration aloud', title_text='Adda Wale - exact HAC-4447 video script'):
     pdfmetrics.registerFont(TTFont('DemoSans', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
     pdfmetrics.registerFont(TTFont('DemoBold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
     normal = ParagraphStyle('body', fontName='DemoSans', fontSize=9.6, leading=12.6, spaceAfter=3)
@@ -66,7 +65,8 @@ def export():
                 rows.append(lines[index]); index += 1
             data = [[Paragraph(markup(value.strip()), cell) for value in row.strip('|').split('|')]
                     for row in rows if not re.fullmatch(r'[|:\-\s]+', row)]
-            table = Table(data, colWidths=[140, A4[0] - 220], repeatRows=1, hAlign='LEFT')
+            widths = [140, A4[0] - 220] if len(data[0]) == 2 else [38, 165, A4[0] - 80 - 203]  # three columns: time, do, say
+            table = Table(data, colWidths=widths, repeatRows=1, hAlign='LEFT')
             table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E3F0ED')),
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
@@ -80,12 +80,12 @@ def export():
     def footer(canvas, doc):
         canvas.setFont('DemoSans', 8)
         canvas.setFillColor(colors.HexColor('#52676B'))
-        canvas.drawString(40, 20, 'HAC-4447 recording aid - read only the narration aloud')
+        canvas.drawString(40, 20, label)
         canvas.drawRightString(A4[0] - 40, 20, str(doc.page))
 
     output.parent.mkdir(parents=True, exist_ok=True)
     SimpleDocTemplate(str(output), pagesize=A4, leftMargin=40, rightMargin=40,
-                      topMargin=35, bottomMargin=38, title='Adda Wale - exact HAC-4447 video script',
+                      topMargin=35, bottomMargin=38, title=title_text,
                       author='Adda Wale').build(story, onFirstPage=footer, onLaterPages=footer)
     pdf = PdfReader(output)
     assert all(page.extract_text().strip() for page in pdf.pages)
@@ -93,4 +93,11 @@ def export():
 
 
 if __name__ == '__main__':
-    export()
+    import argparse
+    parser = argparse.ArgumentParser(description='Printable demo script. Defaults reproduce the prelim HAC-4447 video aid.')
+    parser.add_argument('--finals', action='store_true', help='Print docs/demo-walkthrough.md (finals live demo) instead.')
+    if parser.parse_args().finals:
+        export(ROOT / 'docs/demo-walkthrough.md', ROOT.parent / 'deliverables/AddaWale-Finals-Demo-Script.pdf',
+               'Finals live demo script - narration in the Say column', 'Adda Wale - finals live demo script')
+    else:
+        export()

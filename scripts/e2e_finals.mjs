@@ -45,6 +45,11 @@ for (const viewport of [{ width: 1440, height: 1000, tag: "desktop" }, { width: 
   await page.getByText("Definition and SQL").first().click();
   check(`${v}: check SQL is viewable`, await page.locator("pre").first().isVisible());
   await shot(page, `${v}-overview`);
+  if (v === "desktop") {
+    await page.addStyleTag({ content: "header.sticky { position: static !important; }" });
+    await page.getByRole("heading", { name: "Problems across all customers" }).scrollIntoViewIfNeeded();
+    await page.locator("section", { has: page.getByRole("heading", { name: "Problems across all customers" }) }).screenshot({ path: path.join(OUT, "overview-checks.png") });
+  }
 
   await page.goto(`${BASE}/queue`);
   const queueRows = page.locator(v === "mobile" ? 'ol[aria-label="Work queue in urgency order"] > li' : "tbody tr");
@@ -55,6 +60,7 @@ for (const viewport of [{ width: 1440, height: 1000, tag: "desktop" }, { width: 
   const noHScroll = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
   check(`${v}: no horizontal page scroll on queue`, noHScroll);
   await shot(page, `${v}-queue`);
+  if (v === "desktop") await page.screenshot({ path: path.join(OUT, "queue-viewport.png") });
 
   for (const [cid, expected] of [
     ["JEV-1240", "Offer one of these hardship programmes first"],
@@ -66,6 +72,12 @@ for (const viewport of [{ width: 1440, height: 1000, tag: "desktop" }, { width: 
     await page.getByText("What to do, in order").waitFor({ timeout: 60000 });
     check(`${v}: brief ${cid} headline`, await page.getByText(expected).first().isVisible(), expected);
     if (cid === "SAV-6847") check(`${v}: holiday shown for ${cid}`, await page.getByText(/statutory holiday/).first().isVisible());
+    if (v === "desktop") {
+      // Element shots for the deck: the plan card alone, without the sticky sidebar.
+      await page.addStyleTag({ content: "header.sticky { position: static !important; }" });
+      const card = page.locator('[data-slot="card"]', { has: page.getByText("What to do, in order") }).first();
+      await card.screenshot({ path: path.join(OUT, `plan-${cid}.png`) });
+    }
     if (cid === "JEV-1240") check(`${v}: programmes listed for ${cid}`, await page.getByText("3-month reduced payment").first().isVisible());
     await shot(page, `${v}-brief-${cid}`);
   }
