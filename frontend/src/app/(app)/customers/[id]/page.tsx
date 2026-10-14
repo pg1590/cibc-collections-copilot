@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, FileText, PhoneCall } from "lucide-react";
+import { ContactCalendar, CustomerTimeline } from "@/components/customer-360";
 import { PageHeader } from "@/components/page-header";
 import { KeyValueList, RecordTable } from "@/components/record-table";
 import { ErrorState, LoadingState } from "@/components/states";
@@ -10,6 +11,7 @@ import { VoiceEvidence } from "@/components/voice-evidence";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { canSee, useAuth } from "@/lib/auth";
 import { useApi } from "@/lib/use-api";
 import type { CustomerDetail } from "@/lib/types";
@@ -113,34 +115,55 @@ export default function CustomerDetailPage() {
           </CardContent>
         </Card>
 
-        <Section
-          title="Identity matching"
-          description="Source-system records linked to this customer, with the method and evidence for each link. Confidence values are match scores, not calibrated probabilities."
-        >
-          <RecordTable records={identity} caption="Identity matching evidence" emptyTitle="No identity links returned" />
-        </Section>
-
-        <div className="grid gap-6 xl:grid-cols-2">
-          <Section title="Accounts" description="Credit products held, with balances and delinquency.">
-            <RecordTable records={accounts} caption="Accounts" emptyTitle="No accounts returned" />
-          </Section>
-          <Section title="Collections cases" description="Cases opened for this customer.">
-            <RecordTable records={cases} caption="Cases" emptyTitle="No cases returned" />
-          </Section>
-        </div>
-
-        <Section title="Notes and evidence" description="Agent notes and interaction evidence from source systems.">
-          <RecordTable records={notes} caption="Notes" emptyTitle="No notes returned" />
-        </Section>
-
-        <VoiceEvidence key={customer.customer_id} customerId={customer.customer_id} />
-
-        <Section
-          title="Features"
-          description="Values from the feature store used by the brief. Protected attributes are never part of this set."
-        >
-          <KeyValueList data={features} emptyTitle="No features returned" />
-        </Section>
+        <Tabs defaultValue="history">
+          <div className="-mx-1 overflow-x-auto px-1 pb-1">
+            <TabsList>
+              <TabsTrigger value="history">History &amp; contact</TabsTrigger>
+              <TabsTrigger value="accounts">
+                Accounts &amp; cases <span className="text-muted-foreground tabular-nums">{accounts.length + cases.length}</span>
+              </TabsTrigger>
+              <TabsTrigger value="identity">
+                Identity <span className="text-muted-foreground tabular-nums">{identity.length}</span>
+              </TabsTrigger>
+              <TabsTrigger value="notes">Notes &amp; calls</TabsTrigger>
+              <TabsTrigger value="features">Features</TabsTrigger>
+            </TabsList>
+          </div>
+          <TabsContent value="history" className="space-y-6">
+            <ContactCalendar customerId={customer.customer_id} />
+            <CustomerTimeline customerId={customer.customer_id} />
+          </TabsContent>
+          <TabsContent value="accounts" className="grid gap-6 xl:grid-cols-2">
+            <Section title="Accounts" description="Credit products held, with balances and delinquency.">
+              <RecordTable records={accounts} caption="Accounts" emptyTitle="No accounts returned" />
+            </Section>
+            <Section title="Collections cases" description="Cases opened for this customer.">
+              <RecordTable records={cases} caption="Cases" emptyTitle="No cases returned" />
+            </Section>
+          </TabsContent>
+          <TabsContent value="identity">
+            <Section
+              title="Identity matching"
+              description="Source-system records linked to this customer, with the method and evidence for each link. Confidence values are match scores, not calibrated probabilities."
+            >
+              <RecordTable records={identity} caption="Identity matching evidence" emptyTitle="No identity links returned" />
+            </Section>
+          </TabsContent>
+          <TabsContent value="notes" className="space-y-6">
+            <Section title="Notes and evidence" description="Agent notes and interaction evidence from source systems.">
+              <RecordTable records={notes} caption="Notes" emptyTitle="No notes returned" />
+            </Section>
+            <VoiceEvidence key={customer.customer_id} customerId={customer.customer_id} />
+          </TabsContent>
+          <TabsContent value="features">
+            <Section
+              title="Features"
+              description="Values from the feature store used by the brief. Protected attributes are never part of this set."
+            >
+              <KeyValueList data={features} emptyTitle="No features returned" />
+            </Section>
+          </TabsContent>
+        </Tabs>
 
         <p className="text-muted-foreground flex items-center gap-2 text-xs">
           <Badge variant="outline">Synthetic</Badge> All records come from the synthetic hackathon dataset.
