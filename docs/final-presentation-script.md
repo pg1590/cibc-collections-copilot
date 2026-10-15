@@ -1,6 +1,6 @@
 # Final presentation: 15-minute script
 
-Team Adda Wale: **Krish** opens, **Prakhar** explains the why, **Aryan** runs the live demo, **Prakhar** shows the proof, **Ved** closes. The script runs about 14:30, leaving 30 seconds of buffer. The slides are `deliverables/AddaWale-Finals-Presentation.pdf` (16 slides); the app runs at http://127.0.0.1:3000.
+Team Adda Wale: **Krish** opens, **Prakhar** explains the why, **Aryan** runs the live demo, **Prakhar** shows the proof, **Ved** closes. The script runs about 14:30, leaving 30 seconds of buffer. The slides are `presentation/AddaWale-Finals-Presentation.pdf` (16 slides; printable copies of this script and the demo script are in the same folder); the app runs at http://127.0.0.1:3000.
 
 | Starts | Part and speaker | Slides / screen |
 |---|---|---|
