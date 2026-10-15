@@ -446,6 +446,9 @@ def wrap_up(ctx, o, plan, checks, chosen, call_at, tz, stage, cap, holiday_names
 _REASON_BY_CUE = {'income_loss': 'job_loss', 'income_reduction': 'reduced_income', 'income_delay': 'reduced_income',
                   'illness_or_injury': 'illness', 'separation': 'separation', 'disaster_or_evacuation': 'disaster',
                   'expense_pressure': 'expense_increase', 'payment_difficulty': 'other', 'hardship_request': 'other'}
+# An agreed or offered arrangement repeats the programme's own words ("reduced payment",
+# "deferral"); it is an outcome of the call, not a statement of hardship by the customer.
+_AGREEMENT = re.compile(r'\b(agreed|accepted|chose|selected|offered|set up|signed up|enrolled)\b.{0,60}\b(plan|payment|programme|program|deferral|extension|arrangement)\b')
 _MONTHS = {m: i for i, m in enumerate(['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'], 1)}
 
 
@@ -478,7 +481,7 @@ def extract_rules(note, today):
     proposals = []
     for sentence in _sentences(note):
         cues = [k for k, v in text_features(sentence).items() if v]
-        if cues:
+        if cues and not _AGREEMENT.search(normalize_text(sentence)):
             proposals += [{'field': 'hardship.stated', 'value': True, 'quote': sentence, 'source': 'rules'},
                           {'field': 'hardship.reason', 'value': _REASON_BY_CUE.get(cues[0], 'other'), 'quote': sentence, 'source': 'rules'}]
         n = normalize_text(sentence)
@@ -502,7 +505,17 @@ def extract_rules(note, today):
             proposals.append({'field': 'representative', 'value': {'stated': True, 'kind': kind}, 'quote': sentence, 'source': 'rules'})
         if re.search(r'call (me )?back|rappel', n):
             proposals.append({'field': 'callback', 'value': None, 'quote': sentence, 'source': 'rules'})
-    return proposals
+    return _first_per_field(proposals)
+
+
+def _first_per_field(proposals):
+    """One proposal per outcome: the agent confirms each field once, from its first supporting quote."""
+    seen, out = set(), []
+    for p in proposals:
+        if p['field'] not in seen:
+            seen.add(p['field'])
+            out.append(p)
+    return out
 
 
 EXTRACT_SCHEMA = {
@@ -553,7 +566,7 @@ def extract(note, today, client=None):
     if client is not None and client.configured:
         try:
             raw = client.extract_outcomes(note, today.isoformat(), EXTRACT_SCHEMA)
-            found = verify_model_proposals(raw.get('proposals'), note, today)
+            found = _first_per_field(verify_model_proposals(raw.get('proposals'), note, today))
             return {'proposals': found, 'provider': 'gemini',
                     'message': None if found else 'No outcome with a verifiable quote was found in the note.'}
         except Exception:  # provider unavailable or invalid: fall back, never fail the call

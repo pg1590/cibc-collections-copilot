@@ -179,3 +179,10 @@ class FailingClient:
 def test_provider_failure_falls_back_to_rules():
     result = cs.extract('I lost my job.', date(2026, 10, 1), FailingClient())
     assert result['provider'] == 'rules' and result['proposals'][0]['field'] == 'hardship.stated'
+
+
+def test_agreed_programme_is_not_read_as_hardship_and_each_field_is_proposed_once():
+    note = 'Agreed to the 3-month reduced payment for October. He lost his job last month; money is tight since the layoff.'
+    found = cs.extract(note, date(2026, 9, 28))['proposals']
+    assert [(p['field'], p['value'], p['quote']) for p in found] == [
+        ('hardship.stated', True, 'He lost his job last month;'), ('hardship.reason', 'job_loss', 'He lost his job last month;')]

@@ -407,7 +407,9 @@ def call_state(body:CallState,u=Depends(user)):
 def call_extract(body:CallNote,u=Depends(user)):
     if u['role']=='analyst':raise HTTPException(403,'Call mode is for agents and supervisors.')
     with db() as c:authorize_customer(c,u,body.customer_id)
-    client=runtime.provider();client.begin_trace()
+    # The note is free text typed by the agent: it leaves the machine only when text evidence is enabled.
+    client=runtime.provider() if runtime._text_allowed() else None
+    if client:client.begin_trace()
     result=call_session.extract(body.note,action_plan.AS_OF.date(),client)
     with storage.connect() as s:storage.audit(s,u['username'],'call_extract',body.customer_id,{'provider':result['provider'],'proposals':len(result['proposals'])})
     return result

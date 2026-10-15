@@ -68,3 +68,26 @@ def test_extract_uses_rules_without_a_key(client):
     result = api.post('/api/call/extract', json={'customer_id': 'C-1', 'note': 'I lost my job last month.'}, headers=headers(api, 'agent')).json()
     assert result['provider'] == 'rules' and result['proposals'][0]['field'] == 'hardship.stated'
     assert api.post('/api/call/extract', json={'customer_id': 'C-2', 'note': 'x'}, headers=headers(api, 'agent')).status_code == 404
+
+
+def test_extract_keeps_the_note_local_unless_text_evidence_is_enabled(client, monkeypatch):
+    api, _ = client
+    sent = []
+
+    class Recording:
+        configured = True
+
+        def begin_trace(self):
+            pass
+
+        def extract_outcomes(self, note, today, schema):
+            sent.append(note)
+            return {'proposals': []}
+
+    monkeypatch.setattr(runtime, 'provider', lambda: Recording())
+    body = {'customer_id': 'C-1', 'note': 'I lost my job last month.'}
+    monkeypatch.delenv('COPILOT_GEMINI_TEXT_EVIDENCE', raising=False)
+    assert api.post('/api/call/extract', json=body, headers=headers(api, 'agent')).json()['provider'] == 'rules' and sent == []
+    monkeypatch.setenv('COPILOT_GEMINI_TEXT_EVIDENCE', '1')
+    assert api.post('/api/call/extract', json=body, headers=headers(api, 'agent')).json()['provider'] == 'gemini'
+    assert sent == ['I lost my job last month.']

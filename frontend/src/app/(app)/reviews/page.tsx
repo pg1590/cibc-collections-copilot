@@ -185,7 +185,9 @@ function ReviewCard({ item, canDecide, onUpdated }: { item: ReviewItem; canDecid
         )}
         {item.generation && (
           <p className="text-muted-foreground text-sm">
-            {item.generation.status === "generated" && item.generation.provider.toLowerCase() === "gemini"
+            {item.kind === "call"
+              ? "Call note from Call Mode: outcomes recorded by the agent and checked against the contact, hardship and promise rules."
+              : item.generation.status === "generated" && item.generation.provider.toLowerCase() === "gemini"
               ? "Gemini-assisted draft based on the recorded facts and policy evidence."
               : item.generation.status === "fallback"
                 ? "AI assistance was unavailable. This draft uses the recorded facts and local rules."

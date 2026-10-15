@@ -135,6 +135,7 @@ export interface ReviewItem {
   generation?: Generation;
   policy_sources?: unknown[];
   signals?: Signal[];
+  kind?: "call";
 }
 
 export interface AuditEvent {
