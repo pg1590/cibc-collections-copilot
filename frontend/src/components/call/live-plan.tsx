@@ -116,7 +116,7 @@ function OptionCard({ option, scale, selected, onChoose }: { option: CalcOption;
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="leading-snug font-medium">{option.name}</p>
-          <p className="text-muted-foreground font-mono text-[0.7rem]">
+          <p className="text-muted-foreground font-mono text-[0.75rem]">
             {option.program_id} v{option.version}
           </p>
         </div>

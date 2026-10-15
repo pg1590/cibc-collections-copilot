@@ -30,7 +30,7 @@ function QualityPanel() {
   const failing = q.checks.filter((c) => c.failed_rows > 0).length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <p className="text-muted-foreground text-sm">
         Snapshot <span className="text-foreground font-medium">{q.snapshot_date}</span> · pipeline built{" "}
         <span className="text-foreground font-medium">{formatDateTime(q.built_at)}</span>
@@ -99,7 +99,7 @@ function QualityPanel() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[1.3fr_1fr]">
+      <div className="grid gap-6 xl:grid-cols-[1.3fr_1fr] [&>*]:min-w-0">
         <Card>
           <CardHeader>
             <CardTitle>Row counts</CardTitle>
@@ -159,7 +159,7 @@ function FeaturesPanel() {
   const parityOk = f.parity.checked > 0 && f.parity.mismatches === 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="grid gap-4 sm:grid-cols-3">
         <Card className="gap-1 py-5">
           <CardContent>

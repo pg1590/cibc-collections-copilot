@@ -49,7 +49,7 @@ function Step({ step, changed = false, compact = false }: { step: PlanStep; chan
                 </Badge>
               ))}
               {!compact && step.evidence.map((e) => (
-                <span key={e} className="bg-muted/70 text-muted-foreground rounded px-1.5 py-0.5 font-mono text-[0.7rem] break-all">
+                <span key={e} className="bg-muted/70 text-muted-foreground rounded px-1.5 py-0.5 font-mono text-[0.75rem] break-all">
                   {e}
                 </span>
               ))}

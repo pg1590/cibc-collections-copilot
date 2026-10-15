@@ -1,0 +1,126 @@
+/*
+ * Welcome sequence, driven by data-phase on the page root:
+ *   hidden  -> first paint; everything transparent while positions are measured
+ *   scatter -> six source slips appear around the screen
+ *   gather  -> slips fly into their rows on the centred customer card
+ *   plan    -> the suggested next step appears
+ *   settle  -> the card glides into the hero; headline and sign-in fade in
+ *   done    -> resting page (also the only phase with reduced motion or a repeat visit)
+ */
+
+.root {
+  --ease: cubic-bezier(0.22, 0.7, 0.18, 1);
+}
+
+/* Headline, copy, header and roles: one quiet fade as the card lands. */
+.reveal {
+  transition: opacity 0.8s var(--ease) var(--d, 0ms);
+}
+.root:is([data-phase="hidden"], [data-phase="scatter"], [data-phase="gather"], [data-phase="plan"]) .reveal {
+  opacity: 0;
+  visibility: hidden;
+  transition: none;
+}
+
+/* The card sits in its hero slot; during the intro it is offset to screen centre. */
+.card {
+  box-shadow:
+    0 1px 0 rgb(31 45 61 / 0.04),
+    0 28px 60px -28px rgb(31 45 61 / 0.22);
+  transition:
+    transform 0.95s var(--ease),
+    opacity 0.45s ease;
+}
+.root:is([data-phase="hidden"], [data-phase="scatter"], [data-phase="gather"], [data-phase="plan"]) .card {
+  transform: translate(var(--dx, 0px), var(--dy, 0px)) scale(1.03);
+}
+.root:is([data-phase="hidden"], [data-phase="scatter"]) .card {
+  opacity: 0;
+}
+
+.row {
+  transition: opacity 0.45s ease;
+}
+.root:is([data-phase="hidden"], [data-phase="scatter"]) .row {
+  opacity: 0;
+}
+.root[data-phase="gather"] .row {
+  transition-delay: calc(var(--i) * 80ms + 560ms);
+}
+
+.bar {
+  transform-origin: left center;
+  transition: transform 0.7s var(--ease);
+}
+.root:is([data-phase="hidden"], [data-phase="scatter"]) .bar {
+  transform: scaleX(0);
+}
+.root[data-phase="gather"] .bar {
+  transition-delay: calc(var(--i, 0) * 80ms + 700ms);
+}
+
+.plan {
+  transition:
+    opacity 0.5s ease,
+    box-shadow 1.2s ease;
+}
+.root:is([data-phase="hidden"], [data-phase="scatter"], [data-phase="gather"]) .plan {
+  opacity: 0;
+}
+.root[data-phase="plan"] .plan {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary) 28%, transparent);
+}
+
+/* Source slips: fixed layer above the page, positioned in pixels by the page script. */
+.slips {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+.slip {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: max-content;
+  max-width: min(46vw, 13.5rem);
+  transform: translate(-50%, -50%) rotate(var(--r)) scale(0.96);
+  opacity: 0;
+  transition:
+    opacity 0.5s ease calc(var(--i) * 90ms),
+    transform 0.6s var(--ease) calc(var(--i) * 90ms);
+}
+.root[data-phase="scatter"] .slip {
+  opacity: 1;
+  transform: translate(-50%, -50%) rotate(var(--r)) scale(1);
+}
+.root[data-phase="gather"] .slip {
+  left: var(--tx);
+  top: var(--ty);
+  opacity: 0;
+  transform: translate(-50%, -50%) rotate(0deg) scale(0.82);
+  transition:
+    left 0.75s var(--ease) calc(var(--i) * 80ms),
+    top 0.75s var(--ease) calc(var(--i) * 80ms),
+    transform 0.75s var(--ease) calc(var(--i) * 80ms),
+    opacity 0.25s linear calc(var(--i) * 80ms + 560ms);
+}
+
+.skip {
+  transition: opacity 0.3s ease;
+}
+.root:is([data-phase="settle"], [data-phase="done"]) .skip {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .card,
+  .row,
+  .bar,
+  .plan,
+  .slip {
+    transition: none !important;
+  }
+}

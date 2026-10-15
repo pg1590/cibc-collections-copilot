@@ -2,23 +2,35 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Palette: warm off-white surfaces, dark navy text and chrome, teal for
-   primary actions, restrained coral only for items awaiting human review. */
+/* Palette: a cool, low-glare "harbour mist" shared by the welcome page and the
+   workspace. Soft ink text, teal for primary actions, restrained coral only for
+   items awaiting human review. */
 :root {
-  --radius: 0.625rem;
-  --background: #faf8f4;
-  --foreground: #13213a;
-  --card: #fffdf9;
-  --card-foreground: #13213a;
-  --popover: #fffdf9;
-  --popover-foreground: #13213a;
+  --radius: 0.75rem;
+  --mist: #edf2f0;
+  --paper: #f8faf9;
+  --ink-soft: #1f2d3d;
+  --slate: #566474;
+  --seaglass: #cfe2dc;
+  --seaglass-deep: #8fbcb1;
+  --line-soft: #d6e2de;
+  /* Three soft layers, light to deep: bars (paper), page (mist), footer. */
+  --footer: #e1ebe7;
+  --footer-deep: #d5e3dd;
+
+  --background: var(--mist);
+  --foreground: var(--ink-soft);
+  --card: var(--paper);
+  --card-foreground: var(--ink-soft);
+  --popover: var(--paper);
+  --popover-foreground: var(--ink-soft);
   --primary: #0f6e66;
   --primary-foreground: #f7fbfa;
-  --secondary: #efeae2;
-  --secondary-foreground: #13213a;
-  --muted: #f2eee7;
-  --muted-foreground: #5b6474;
-  --accent: #e3f0ee;
+  --secondary: #e2eae7;
+  --secondary-foreground: var(--ink-soft);
+  --muted: #e4ebe8;
+  --muted-foreground: var(--slate);
+  --accent: #dcebe6;
   --accent-foreground: #0b4f49;
   --destructive: #b42318;
   --destructive-foreground: #fff8f6;
@@ -27,13 +39,14 @@
   --review-foreground: #8f3524;
   --success: #1f7a4d;
   --success-soft: #e4f2ea;
-  --border: #e4ddd2;
-  --input: #d9d1c4;
+  --border: var(--line-soft);
+  --input: #c4d6d0;
   --ring: #0f6e66;
-  --sidebar: #13213a;
-  --sidebar-foreground: #e9e5dd;
-  --sidebar-muted: #9aa5b8;
-  --sidebar-accent: #1d2e4d;
+  /* Dark code panels (Ask page SQL). */
+  --sidebar: #1f2d3d;
+  --sidebar-foreground: #e6ece9;
+  --sidebar-muted: #9aa8b4;
+  --sidebar-accent: #2a3b4f;
 }
 
 @theme inline {
@@ -65,11 +78,27 @@
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-muted: var(--sidebar-muted);
   --color-sidebar-accent: var(--sidebar-accent);
+  --color-mist: var(--mist);
+  --color-paper: var(--paper);
+  --color-ink-soft: var(--ink-soft);
+  --color-slate: var(--slate);
+  --color-seaglass: var(--seaglass);
+  --color-seaglass-deep: var(--seaglass-deep);
+  --color-line-soft: var(--line-soft);
+  --color-footer: var(--footer);
+  --color-footer-deep: var(--footer-deep);
+  /* Atkinson Hyperlegible Next: drawn by the Braille Institute for readability. Self-hosted, so it works offline. */
+  /* Small text one notch up for readability: 12->13px and 14->15px. Body stays 16px. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: calc(1.125 / 0.8125);
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: calc(1.375 / 0.9375);
+  --font-humane: "Atkinson Hyperlegible Next Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Atkinson Hyperlegible Next Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
   --animate-plan-flash: plan-flash 1.8s ease-out;
   /* Live Call Mode switches to three columns here (between xl and 2xl). */
@@ -95,9 +124,97 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    font-feature-settings: "cv11", "ss01";
   }
   h1, h2, h3 {
     letter-spacing: -0.015em;
+  }
+}
+
+/* ---- Motion shared across the workspace ------------------------------------ */
+
+/* Scroll reveal: content sharpens from a soft blur as it enters the viewport. */
+[data-reveal] {
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 0.7, 0.18, 1) var(--reveal-delay, 0ms),
+    filter 0.7s cubic-bezier(0.22, 0.7, 0.18, 1) var(--reveal-delay, 0ms),
+    translate 0.7s cubic-bezier(0.22, 0.7, 0.18, 1) var(--reveal-delay, 0ms);
+}
+[data-reveal="hidden"] {
+  opacity: 0;
+  filter: blur(8px);
+  translate: 0 18px;
+}
+
+/* Top bar: a frosted paper layer, lighter than the page, that lifts once
+   content scrolls beneath it. */
+.app-header {
+  background-color: color-mix(in oklab, var(--paper) 90%, transparent);
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  border-bottom: 1px solid var(--line-soft);
+}
+@supports (animation-timeline: scroll()) {
+  .app-header {
+    animation: header-lift linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0 140px;
+  }
+}
+@keyframes header-lift {
+  from {
+    background-color: color-mix(in oklab, var(--paper) 96%, transparent);
+    box-shadow: 0 0 0 transparent;
+  }
+  to {
+    background-color: color-mix(in oklab, var(--paper) 84%, transparent);
+    border-bottom-color: var(--line-soft);
+    box-shadow: 0 10px 30px -24px rgb(31 45 61 / 0.4);
+  }
+}
+
+/* Page headers drift a little slower than the page and soften as you scroll on. */
+@supports (animation-timeline: scroll()) {
+  .page-drift {
+    animation: page-drift linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0 32vh;
+  }
+}
+@keyframes page-drift {
+  to {
+    translate: 0 3vh;
+    opacity: 0.2;
+    filter: blur(5px);
+  }
+}
+
+/* Welcome and sign-in bars use the same paper layer as the workspace bar. */
+.site-bar {
+  background-color: var(--paper);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+/* Lenis smooth scrolling (from lenis/dist/lenis.css). */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis:not(.lenis-autoToggle).lenis-stopped {
+  overflow: clip;
+}
+.lenis [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] {
+    transition: none;
+    opacity: 1 !important;
+    filter: none !important;
+    translate: none !important;
+  }
+  .app-header,
+  .page-drift {
+    animation: none;
   }
 }

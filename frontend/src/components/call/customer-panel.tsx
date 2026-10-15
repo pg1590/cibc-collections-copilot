@@ -102,7 +102,7 @@ export function CustomerPanel({ session }: { session: CallSession }) {
               {stop.policy.length > 0 && (
                 <p className="mt-3 flex flex-wrap gap-1.5">
                   {stop.policy.map((p) => (
-                    <span key={p} className="rounded bg-white/15 px-1.5 py-0.5 font-mono text-[0.7rem]">
+                    <span key={p} className="rounded bg-white/15 px-1.5 py-0.5 font-mono text-[0.75rem]">
                       {p}
                     </span>
                   ))}

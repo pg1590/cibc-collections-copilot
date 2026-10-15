@@ -176,7 +176,7 @@ function ReviewCard({ item, canDecide, onUpdated }: { item: ReviewItem; canDecid
           <StatusBadge item={item} />
         </CardAction>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         {item.summary_evidence && (
           <section aria-label="Supporting evidence" className="bg-muted/40 rounded-md border p-3">
             <h3 className="text-muted-foreground mb-2 text-sm font-medium">Supporting evidence</h3>
@@ -213,11 +213,11 @@ function ReviewCard({ item, canDecide, onUpdated }: { item: ReviewItem; canDecid
           </div>
         )}
         <div>
-          <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Recommendation</h3>
+          <h3 className="text-muted-foreground text-sm font-medium">Recommendation</h3>
           <p className="mt-1 leading-relaxed whitespace-pre-line">{item.recommendation}</p>
           {item.recommendation_reason && (
             <div className="mt-3">
-              <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Why this recommendation</h3>
+              <h3 className="text-muted-foreground text-sm font-medium">Why this recommendation</h3>
               <p className="mt-1 text-sm leading-relaxed whitespace-pre-line">{item.recommendation_reason}</p>
             </div>
           )}
@@ -237,7 +237,7 @@ function ReviewCard({ item, canDecide, onUpdated }: { item: ReviewItem; canDecid
         )}
         {!!item.policy_sources?.length && (
           <div>
-            <h3 className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">Policy sources</h3>
+            <h3 className="text-muted-foreground mb-2 text-sm font-medium">Policy sources</h3>
             <SourceList sources={item.policy_sources} />
           </div>
         )}
@@ -254,7 +254,7 @@ function ReviewCard({ item, canDecide, onUpdated }: { item: ReviewItem; canDecid
           </Collapsible>
         )}
         <div>
-          <h3 className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+          <h3 className="text-muted-foreground text-sm font-medium">
             {item.contact_hold
               ? item.decision === "edit"
                 ? "Edited internal note — do not contact the customer"
@@ -326,7 +326,7 @@ export default function ReviewsPage() {
 
   const list = (rows: ReviewItem[], empty: string) =>
     rows.length ? (
-      <div className="space-y-5">
+      <div className="space-y-8">
         {rows.map((item) => (
           <ReviewCard key={item.brief_id} item={item} canDecide={isSupervisor} onUpdated={onUpdated} />
         ))}

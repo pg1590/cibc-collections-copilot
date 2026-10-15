@@ -24,7 +24,7 @@ import { displayValue } from "@/lib/utils";
 function BriefView({ brief }: { brief: Brief }) {
   const draftTitle = brief.contact_hold ? "Internal note — do not contact the customer" : "Draft message";
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <Alert variant="review">
         <Hourglass aria-hidden />
         <AlertTitle>Waiting for supervisor review</AlertTitle>
@@ -166,7 +166,7 @@ function BriefView({ brief }: { brief: Brief }) {
             <Textarea id="brief-draft" readOnly value={brief.draft} className="bg-muted/40 min-h-40 leading-relaxed" />
           </CardContent>
         </Card>
-        <div className="space-y-6">
+        <div className="space-y-8">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -176,11 +176,11 @@ function BriefView({ brief }: { brief: Brief }) {
             <CardContent>
               <dl className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <dt className="text-muted-foreground text-xs uppercase">Name</dt>
+                  <dt className="text-muted-foreground text-sm">Name</dt>
                   <dd className="font-medium break-words">{brief.model.name}</dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground text-xs uppercase">Version</dt>
+                  <dt className="text-muted-foreground text-sm">Version</dt>
                   <dd className="font-medium break-words">{brief.model.version}</dd>
                 </div>
               </dl>

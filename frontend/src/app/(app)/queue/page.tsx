@@ -85,7 +85,7 @@ function QueueWorkspace() {
       ) : queue.error ? (
         <ErrorState message={queue.error} onRetry={queue.reload} />
       ) : data && (
-        <div className="space-y-6">
+        <div className="space-y-8">
           <section aria-label="Urgency tiers" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {data.tiers
               .filter((t) => t.count > 0)
@@ -136,7 +136,7 @@ function QueueWorkspace() {
                   {i.flags.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap gap-1">
                       {i.flags.map((f) => (
-                        <Badge key={f} variant="outline" className="text-[0.7rem]">
+                        <Badge key={f} variant="outline" className="text-[0.75rem]">
                           {FLAG_LABEL[f] ?? f}
                         </Badge>
                       ))}
@@ -184,19 +184,19 @@ function QueueWorkspace() {
                         <Link href={`/customers/${encodeURIComponent(i.customer_id)}`} className="font-medium underline-offset-4 hover:underline">
                           {i.name}
                         </Link>
-                        <span className="text-muted-foreground block font-mono text-xs">
+                        <span className="text-muted-foreground block font-mono text-xs whitespace-nowrap">
                           {i.customer_id} · {i.product.replace(/_/g, " ")} · {i.dpd ?? "—"} DPD
                         </span>
                       </TableCell>
-                      <TableCell className="max-w-[26rem] align-top whitespace-normal">
+                      <TableCell className="max-w-[32rem] align-top whitespace-normal">
                         <Badge variant={TIER_BADGE[i.tier]} className="mb-1">
                           {i.tier_label}
                         </Badge>
-                        <p className="text-sm leading-snug">{i.reason}</p>
+                        <p className="text-sm leading-relaxed">{i.reason}</p>
                         {i.flags.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
+                          <div className="mt-1.5 flex flex-wrap gap-1">
                             {i.flags.map((f) => (
-                              <Badge key={f} variant="outline" className="text-[0.7rem]">
+                              <Badge key={f} variant="outline" className="text-[0.75rem]">
                                 {FLAG_LABEL[f] ?? f}
                               </Badge>
                             ))}

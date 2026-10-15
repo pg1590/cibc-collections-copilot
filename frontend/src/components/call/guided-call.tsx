@@ -68,7 +68,7 @@ export function CheckLine({ check }: { check: Check }) {
       <div className="min-w-0">
         <span className="sr-only">{s.label}: </span>
         <span className={cn(check.status !== "ok" && "font-medium", s.text)}>{check.message}</span>
-        {check.policy.length > 0 && <span className="text-muted-foreground ml-1.5 font-mono text-[0.7rem] break-words">{check.policy.join(", ")}</span>}
+        {check.policy.length > 0 && <span className="text-muted-foreground ml-1.5 font-mono text-[0.75rem] break-words">{check.policy.join(", ")}</span>}
       </div>
     </li>
   );
@@ -123,7 +123,7 @@ function ReachedStep({ outcomes, update }: { outcomes: Outcomes; update: Update 
           <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
           <p>
             <strong>No debt details to third parties.</strong> Leave only your first name and a callback number. Do not mention
-            the debt, the amount or the collections team. <span className="font-mono text-[0.7rem]">POL-COLL-001 v3.0 §5.4</span>
+            the debt, the amount or the collections team. <span className="font-mono text-[0.75rem]">POL-COLL-001 v3.0 §5.4</span>
           </p>
         </div>
       )}
@@ -184,11 +184,11 @@ function ChecklistStep({ session, outcomes, update }: { session: CallSession; ou
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-1.5">
                     <span className="text-sm font-medium">{scriptLabel(item.key)}</span>
-                    {item.required && <Badge variant="outline" className="text-[0.65rem]">Required</Badge>}
+                    {item.required && <Badge variant="outline" className="text-[0.75rem]">Required</Badge>}
                     {!field && item.done && <span className="text-primary text-xs font-medium">Done</span>}
                   </span>
                   <span className="text-foreground/85 mt-1 block text-sm leading-relaxed">{item.text}</span>
-                  {item.policy.length > 0 && <span className="text-muted-foreground mt-1 block font-mono text-[0.7rem]">{item.policy.join(", ")}</span>}
+                  {item.policy.length > 0 && <span className="text-muted-foreground mt-1 block font-mono text-[0.75rem]">{item.policy.join(", ")}</span>}
                 </span>
               </>
             );

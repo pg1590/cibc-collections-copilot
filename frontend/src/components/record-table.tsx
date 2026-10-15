@@ -56,7 +56,7 @@ export function KeyValueList({ data, emptyTitle = "Nothing reported" }: { data: 
     <dl className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
       {entries.map(([key, value]) => (
         <div key={key} className="border-b pb-2">
-          <dt className="text-muted-foreground text-xs font-medium tracking-wide uppercase">{humanize(key)}</dt>
+          <dt className="text-muted-foreground text-sm font-medium">{humanize(key)}</dt>
           <dd className="mt-1 text-sm break-words">{displayValue(value)}</dd>
         </div>
       ))}

@@ -226,7 +226,7 @@ export default function AskPage() {
           </div>
         </form>
 
-        <div aria-live="polite" className="space-y-6">
+        <div aria-live="polite" className="space-y-8">
           {error && <ErrorState title="The question could not be answered" message={error} />}
           {history.map((exchange, i) => (
             <AnswerCard key={history.length - i} {...exchange} onAsk={(text) => void submit(text)} pending={pending} />

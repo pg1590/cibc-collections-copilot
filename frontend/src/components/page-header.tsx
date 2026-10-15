@@ -8,10 +8,11 @@ export function PageHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div className="space-y-1.5">
-        <h1 className="text-2xl font-semibold sm:text-[1.75rem]">{title}</h1>
-        {description && <p className="text-muted-foreground max-w-2xl text-[0.95rem] leading-relaxed">{description}</p>}
+    // page-drift: the header lags and softens as the page scrolls (globals.css).
+    <header className="page-drift mb-10 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+      <div className="space-y-2.5">
+        <h1 className="text-[2rem] leading-tight font-normal tracking-[-0.02em] sm:text-[2.375rem]">{title}</h1>
+        {description && <p className="text-muted-foreground max-w-2xl text-[1.0625rem] leading-relaxed">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
     </header>
