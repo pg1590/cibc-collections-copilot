@@ -1,16 +1,21 @@
-"""Generate the 13-slide finals deck from measured local results.
+"""Generate the 16-slide finals deck from measured local results.
 
 Numbers come from the database, the reports in data/ and the pinned demo customers.
 Screenshots are real application renders from scripts/e2e_finals.mjs (OUT=data/finals-shots).
 Conventional PDF text, shapes and screenshots only; no image generation.
 Run after: pytest --junitxml=data/test-results.xml, scripts/validate_dev.py,
-scripts/evaluate_hardship_cv.py and the browser check.
+scripts/evaluate_hardship_cv.py, scripts/compare_llm_classifier.py and the browser check.
+The LLM comparison is read from data/llm-comparison.json (override with LLM_COMPARISON=path).
 """
 import argparse
 import csv
 import json
+import os
+import statistics
 import sys
+import time
 import xml.etree.ElementTree as ET
+from datetime import timedelta
 from html import escape
 from pathlib import Path
 
@@ -32,8 +37,10 @@ from app.settings import AS_OF, DB, QUALITY, ROOT, SNAPSHOT
 
 NAVY, TEAL, MUTED, PAPER, RED, CORAL, LINE = '#18343C', '#087F80', '#52676B', '#F8F9F6', '#A34335', '#D9614A', '#CCDCD8'
 W, H = 960, 540
-SLIDES = 13
+SLIDES = 16
 SHOTS = ROOT / 'data/finals-shots'
+DOCS = ROOT / 'docs'
+LLM_COMPARISON = Path(os.environ.get('LLM_COMPARISON', ROOT / 'data/llm-comparison.json'))
 
 
 def load_facts():
@@ -52,6 +59,22 @@ def load_facts():
             'hardship': {'stated': True, 'reason': 'job_loss'}, 'programme': 'HP-LOAN-RED3',
             'promise': {'amount': 315.86, 'date': '2026-10-15'}, 'income': {'monthly_income': 2400, 'monthly_expenses': 1900}})
         facts['blocked'] = call_session.session(call_session.load(c, 'HAC-4447'), 'not_established', {})
+        # Data volumes and speeds for the architecture slide, measured at export.
+        facts['volumes'] = {name: c.execute(f'SELECT count(*) FROM curated.{name}').fetchone()[0]
+                            for name in ['customers', 'contact_history', 'agent_notes', 'collections_cases']}
+        scan = []
+        for _ in range(5):
+            started = time.perf_counter()
+            c.execute(f"SELECT count(*) FROM curated.contact_history WHERE direction='outbound' AND contact_ts_utc > TIMESTAMP '{(AS_OF.replace(tzinfo=None) - timedelta(days=30)):%Y-%m-%d %H:%M:%S}'").fetchone()
+            scan.append((time.perf_counter() - started) * 1000)
+        facts['scan_ms'] = statistics.median(scan)
+        call_times = []
+        for _ in range(5):
+            started = time.perf_counter()
+            call_session.session(call_session.load(c, 'JEV-1240'), 'recorded', {'reached': 'customer', 'recording_notice': True, 'identity_verified': True,
+                                                                               'hardship': {'stated': True, 'reason': 'job_loss'}})
+            call_times.append(time.perf_counter() - started)
+        facts['call_seconds'] = statistics.median(call_times)
     red3 = next(o for o in facts['call']['calculator']['options'] if o['program_id'] == 'HP-LOAN-RED3')
     if (red3['payment_now'], red3['payment_during']) != (631.72, 315.86) or facts['blocked']['stage'] != 'blocked':
         raise ValueError('Call Mode demo example changed; recheck JEV-1240 and HAC-4447.')
@@ -83,6 +106,31 @@ def load_facts():
     if not all(r['ok'] for r in e2e['results']) or e2e['errors']:
         raise ValueError('Browser check has failures; rerun scripts/e2e_finals.mjs.')
     facts['e2e'] = len(e2e['results'])
+    # Hardship detector vs an LLM on the same held-out notes (scripts/compare_llm_classifier.py).
+    llm = json.loads(LLM_COMPARISON.read_text(encoding='utf-8'))
+    if llm['gemini'].get('unreadable_answers') is None or not llm.get('notes'):
+        raise ValueError(f'{LLM_COMPARISON} is incomplete; rerun scripts/compare_llm_classifier.py.')
+    facts['llm'] = llm
+    # Why Gemini's false alarms happened, counted from the notes themselves: the release tags
+    # vulnerable customers "cust vulnerable - financial hardship" (POL-COLL-004 s4.5), not hardship.
+    fp_ids = llm.get('errors_by_detector', {}).get('gemini', {}).get('false_positives', [])
+    with duckdb.connect(str(DB), read_only=True) as con:
+        fp_text = [r[0] for r in con.execute('SELECT note_text FROM curated.agent_notes WHERE note_id IN (' + ','.join('?' for _ in fp_ids) + ')', fp_ids).fetchall()] if fp_ids else []
+    facts['llm_fp_vulnerability_tag'] = sum('vulnerable - financial hardship' in t.lower() for t in fp_text)
+    # Local end-to-end cost on the same notes: cue extraction plus model scoring.
+    sys.path.insert(0, str(ROOT / 'scripts'))
+    import joblib
+    from compare_llm_classifier import heldout
+    from app.features import TEXT_FEATURES, text_features
+    notes = heldout()[0]
+    bundle = joblib.load(ROOT / 'data/hardship-model.joblib')
+    model = bundle['model'] if isinstance(bundle, dict) else bundle
+    runs = []
+    for _ in range(5):
+        started = time.perf_counter()
+        model.predict_proba([[text_features(n)[k] for k in TEXT_FEATURES] for n in notes])
+        runs.append((time.perf_counter() - started) * 1000 / len(notes))
+    facts['local_ms_per_note'] = statistics.median(runs)
     return facts
 
 
@@ -111,7 +159,11 @@ def generate(output):
         p.drawOn(c, x, top - height)
         return top - height
 
-    def page(number, title, subtitle=None, source=None):
+    counter = [1]  # the cover is slide 1
+
+    def page(title, subtitle=None, source=None):
+        counter[0] += 1
+        number = counter[0]
         c.setFillColor(HexColor(PAPER)); c.rect(0, 0, W, H, fill=1, stroke=0)
         text(48, 500, 864, escape(title), 29, bold=True, maximum=44)
         if subtitle:
@@ -135,6 +187,30 @@ def generate(output):
         c.drawImage(ImageReader(img), x, y + height - dh, dw, dh)
         c.rect(x, y + height - dh, dw, dh, fill=0, stroke=1)
 
+    def picture(path, x, y, width, height):
+        """Draw a whole image (no crop), scaled to fit the box and centred in it."""
+        img = Image.open(path).convert('RGB')
+        scale = min(width / img.width, height / img.height)
+        dw, dh = img.width * scale, img.height * scale
+        c.drawImage(ImageReader(img), x + (width - dw) / 2, y + (height - dh) / 2, dw, dh)
+
+    def box(x, y, w, h, title, body, dashed=False, accent=False, size=12.5, body_size=10.5):
+        c.setFillColor(HexColor('#E6F2F0' if accent else '#FFFFFF')); c.setStrokeColor(HexColor(TEAL if accent else MUTED if dashed else LINE))
+        c.setLineWidth(1.6 if accent else 1.1); c.setDash(4, 3) if dashed else c.setDash()
+        c.roundRect(x, y, w, h, 7, fill=1, stroke=1); c.setDash()
+        top = text(x + 10, y + h - 9, w - 20, f'<b>{escape(title)}</b>', size, maximum=size * 2.8)
+        text(x + 10, top - 3, w - 20, escape(body), body_size, MUTED, maximum=h - 9 - (y + h - 9 - top) - 6)
+
+    def arrow(x1, y1, x2, y2, dashed=False):
+        c.setStrokeColor(HexColor(MUTED)); c.setFillColor(HexColor(MUTED)); c.setLineWidth(1.2)
+        c.setDash(4, 3) if dashed else c.setDash()
+        c.line(x1, y1, x2, y2); c.setDash()
+        import math
+        a = math.atan2(y2 - y1, x2 - x1)
+        p = c.beginPath(); p.moveTo(x2, y2)
+        p.lineTo(x2 - 7 * math.cos(a - 0.45), y2 - 7 * math.sin(a - 0.45)); p.lineTo(x2 - 7 * math.cos(a + 0.45), y2 - 7 * math.sin(a + 0.45)); p.close()
+        c.drawPath(p, fill=1, stroke=0)
+
     def chip(x, y, label, color):
         c.setFont('DeckBold', 9)
         w = c.stringWidth(label, 'DeckBold', 9) + 12
@@ -154,7 +230,7 @@ def generate(output):
     c.showPage()
 
     # 2. The problem
-    page(2, 'Before every call, an agent has to check eight things',
+    page('Before every call, an agent has to check eight things',
          'The facts sit in different systems and the rules in different policies. Missing one can mean a breach or a harmed customer.')
     items = [('Restrictions', 'insolvency, cease, deceased', 'POL-COLL-001 §7.3'), ('Representative', 'counsellor, lawyer, trustee', '§5.4'),
              ('Disputes, complaints', 'pause disputed amounts', 'PRC-COLL-012'), ('Vulnerability', 'safeguard, certified agent', 'POL-COLL-004 §4.5'),
@@ -176,7 +252,7 @@ def generate(output):
     c.showPage()
 
     # 3. What we found
-    page(3, f"What we found across {f['open_cases']:,} open cases",
+    page(f"What we found across {f['open_cases']:,} open cases",
          'Each number is one SQL query, shown on the Overview page next to its definition.',
          'Source: app/portfolio_checks.py on the 28 Sep 2026 snapshot')
     order = ['hardship_no_plan', 'over_contact_cap', 'outside_permitted_hours', 'near_write_off', 'vulnerable_uncertified', 'insolvency_not_on_hold']
@@ -193,8 +269,102 @@ def generate(output):
         text(x + 18, y + 32, 246, escape(ch['policy']), 9, TEAL, font='DeckMono', maximum=24)
     c.showPage()
 
-    # 4. The brief
-    page(4, 'The brief: what to do, in order',
+    # 4. How we decided
+    page('How we decided which tool does each job',
+         'Five constraints from the policies and the data came before any code. One rule then picked the technology for each job.',
+         'Source: docs/design-decisions.md')
+    top = 404
+    for i, (label, body) in enumerate([
+            ('Compliance first', 'A wrong step is a legal or policy breach, not a lower score.'),
+            ('Explainable', 'Every recommendation names its source record and policy section.'),
+            ('Data stays in the bank by default', 'Notes and transcripts are the most sensitive text we hold.'),
+            ('Works on the next data release', 'Nothing in the decisions is tied to this extract.'),
+            ('Measured, not claimed', 'Every number can be reproduced by a script or a query.')]):
+        c.setFillColor(HexColor(TEAL)); c.circle(61, top - 9, 11, fill=1, stroke=0)
+        c.setFillColor(HexColor('#FFFFFF')); c.setFont('DeckBold', 11); c.drawCentredString(61, top - 13, str(i + 1))
+        top = text(80, top, 300, f'<b>{escape(label)}</b>', 13.5, maximum=22)
+        top = text(80, top - 2, 300, escape(body), 11, MUTED, maximum=34) - 12
+    text(48, top - 4, 332, 'The LLM goes only where language helps <i>and</i> its output can be checked; it never touches numbers or compliance steps.', 12, TEAL, maximum=54)
+    picture(DOCS / 'how-it-works/decision-rule.png', 396, 36, 516, 384)
+    c.showPage()
+
+    # 5. Backend architecture
+    vol, pl = f['volumes'], f['plans']
+    page('Backend architecture, and why each part',
+         'Customer data is only read; reviews and audit are the only writes; the LLM is optional.',
+         'Source: app/main.py, app/action_plan.py, app/insights.py, app/storage.py, app/gemini.py; timings measured on the demo laptop at export')
+    box(48, 316, 160, 104, 'Next.js web app', 'Nine pages and Ctrl+K. No business logic or data access in the browser.')
+    box(240, 316, 190, 104, 'FastAPI backend', 'Typed JSON endpoints. Role and case access checked on every request, not by hiding buttons.')
+    box(240, 176, 190, 112, 'Gemini 3.5 Flash-Lite', 'Optional. Fills a fixed JSON schema; every reply is validated; any failure falls back to local.', dashed=True)
+    box(462, 352, 220, 68, 'Rules engine', 'action_plan, call_session, work_queue: each policy step is code.', accent=True, body_size=10)
+    box(462, 276, 220, 68, 'Ask engine', 'Question to reviewed SQL with bound parameters; BM25 policy search.', body_size=10)
+    box(462, 200, 220, 68, 'Customer 360', 'One customer across systems: timeline and contact calendar.', body_size=10)
+    box(714, 300, 198, 120, 'DuckDB, read-only', f"Columnar SQL in one local file: {vol['customers'] / 1e6:.2f}M customers, {vol['contact_history'] / 1e6:.2f}M contacts, {vol['agent_notes'] / 1e3:,.0f}K notes. Reads Parquet directly.", body_size=10)
+    box(714, 176, 198, 108, 'SQLite, the only writes', 'Sessions, briefs, decisions. Hash-chained audit; triggers refuse edits and deletes.', body_size=10)
+    arrow(208, 368, 240, 368)
+    c.setStrokeColor(HexColor(MUTED)); c.setLineWidth(1.2); c.line(430, 368, 446, 368); c.line(446, 234, 446, 386)
+    for yy in (386, 310, 234):
+        arrow(446, yy, 462, yy)
+    arrow(335, 316, 335, 288, dashed=True)
+    c.setStrokeColor(HexColor(MUTED)); c.setLineWidth(1.2); c.line(698, 234, 698, 386)
+    for yy in (386, 310, 234):
+        c.line(682, yy, 698, yy)
+    arrow(698, 360, 714, 360); arrow(698, 230, 714, 230)
+    text(48, 288, 170, 'Why these parts: DuckDB scans millions of rows in milliseconds without a server; BM25 cites an exact policy section; SQLite keeps writes away from customer data.', 10.5, NAVY, maximum=120)
+    for i, (value, label) in enumerate([(f"{f['scan_ms']:.0f} ms", '30-day scan of all outbound contacts'),
+                                        (f"{f['call_seconds']:.2f} s", 'Call Mode recompute, in-process (about 0.17 s via the web API)'),
+                                        ('0.23 s', 'full brief (measured 15 Oct)'),
+                                        (f"{pl['seconds']:.1f} s", f"plan all {pl['customers']:,} customers, nightly batch"),
+                                        ('0', 'model-written SQL queries ever executed')]):
+        x = 48 + i * 174
+        c.setFillColor(HexColor('#FFFFFF')); c.setStrokeColor(HexColor(LINE)); c.setLineWidth(1); c.roundRect(x, 40, 164, 104, 7, fill=1, stroke=1)
+        text(x + 12, 132, 140, value, 24, TEAL, True, maximum=34)
+        text(x + 12, 96, 140, escape(label), 10.5, MUTED, maximum=44)
+    c.showPage()
+
+    # 6. Why this model, and why this LLM
+    llm = f['llm']
+    g, lr, rules, serve = llm['gemini'], llm['logistic_regression'], llm['rules_only'], llm['serving_brief']
+    positives = llm['positives']
+    page('Why this model, and why this LLM',
+         f"Same {llm['notes']} held-out notes, {positives} with hardship. Gemini was given the policy's hardship definition.",
+         'Source: scripts/compare_llm_classifier.py, data/llm-comparison.json; held-out split from scripts/train_model.py (customer-grouped, seed 1590)')
+    local = f"≤ {f['local_ms_per_note']:.2f} ms"
+    stable = g.get('same_answer_on_rerun')
+    rows = [('Served detector: model OR any cue (what the app ships)', serve, local, '100%', 'No', 'Cue and sentence shown'),
+            ('Logistic regression on 9 policy cues', lr, local, '100%', 'No', '9 named weights'),
+            ('Rules only: any cue fires', rules, local, '100%', 'No', 'Cue and sentence shown'),
+            (f"Gemini 3.5 Flash-Lite, zero-shot", g, f"{g['median_seconds_per_note']:.2f} s median",
+             f"{stable:.0%}" + (f" of {g['rerun_notes']}" if g.get('rerun_notes') else '') if stable is not None else 'n/a', 'Yes: note text sent', 'A yes or no, no reason')]
+    heads = ['Detector', 'Hardship found', 'False alarms', 'Time per note', 'Same answer twice', 'Note leaves the bank', 'Explains itself']
+    xs, ws = [48, 316, 422, 504, 610, 698, 806], [260, 100, 76, 100, 82, 102, 106]
+    for j, head in enumerate(heads):
+        text(xs[j], 410, ws[j], f'<b>{escape(head)}</b>', 10.5, MUTED, maximum=30)
+    c.setStrokeColor(HexColor(LINE)); c.setLineWidth(1)
+    for i, (name, m, speed, same, leaves, why) in enumerate(rows):
+        y = 366 - i * 46
+        c.line(48, y + 12, 912, y + 12)
+        if i == 0:
+            c.setFillColor(HexColor('#E6F2F0')); c.rect(48, y - 32, 864, 44, fill=1, stroke=0)
+        found = f"{m['tp']} of {m['tp'] + m['fn']}"
+        color = TEAL if i == 0 else NAVY
+        cells = [name, found, str(m['fp']), speed, same, leaves, why]
+        for j, cell in enumerate(cells):
+            text(xs[j], y + 4, ws[j], f'<b>{escape(cell)}</b>' if j in (0, 1) else escape(cell), 11 if j else 11.5, color if j != 5 or leaves == 'No' else RED, maximum=40)
+    notes_total = f['volumes']['agent_notes']
+    local_s = notes_total * f['local_ms_per_note'] / 1000
+    llm_days = notes_total * g['median_seconds_per_note'] / 86400
+    text(48, 178, 864, f"<b>All {notes_total:,} notes, one at a time at the measured rate:</b> local detector about {local_s:,.0f} s; Gemini about {llm_days:,.1f} days"
+         + (f"; {g['unreadable_answers']} unreadable Gemini answers in {g['calls']} calls." if g.get('unreadable_answers') else '.')
+         + (f" {f['llm_fp_vulnerability_tag']} of Gemini's {g['fp']} false alarms were notes tagged \u201ccust vulnerable - financial hardship\u201d: a vulnerability tag under POL-COLL-004 \u00a74.5, not hardship." if f.get('llm_fp_vulnerability_tag') else ''),
+         12.5, NAVY, maximum=40)
+    text(48, 128, 420, '<b>Why this model</b><br/>500 labelled notes is too few for a deep model. Nine policy cues give readable weights, use no protected or vulnerability inputs, and are identical offline and live. It runs inside the bank.', 11, MUTED, maximum=96)
+    text(492, 128, 420, '<b>Why this LLM, and only to propose</b><br/>Gemini 3.5 Flash-Lite: free tier, JSON-schema output we validate, under 2 s a call; 3.8 Flash was overloaded (503 and timeouts) on 15 Oct. '
+         'It sits behind one module. It proposes plans, verbatim evidence and call outcomes; the app verifies each one.', 11, MUTED, maximum=96)
+    c.showPage()
+
+    # 7. The brief
+    page('The brief: what to do, in order',
          'Rules over source records decide every step. The model can only flag possible hardship for a human to confirm.')
     flow = [('1', "Don't contact", 'restriction recorded', 'stop'), ('2', 'Representative only', 'all contact through them', 'do'),
             ('3', 'Dispute / complaint', 'pause, escalate', 'careful'), ('4', 'Vulnerable', 'script, certified agent', 'careful'),
@@ -215,9 +385,9 @@ def generate(output):
          'A supervisor reviews every brief; the app never contacts a customer.', 14, maximum=60)
     c.showPage()
 
-    # 5. Example: legal window
+    # 8. Example: legal window
     sav = f['sav']['contact_window']
-    page(5, 'Example: when is contact actually allowed?', 'Customer SAV-6847, a real record in the synthetic release.',
+    page('Example: when is contact actually allowed?', 'Customer SAV-6847, a real record in the synthetic release.',
          'Source: contact_history, customer consent and hours, holidays computed by rule (app/holidays.py)')
     reasons = ''.join(f"<br/>{escape(action_plan._day(__import__('datetime').date.fromisoformat(s['date'])))}: {escape(s['reason'])}" for s in sav['skipped'])
     text(48, 400, 330, '<b>Not Monday or Tuesday</b><br/>3 attempts already used in the last 7 days. Payment reminders count (POL-COLL-001 §5.2).', 15, maximum=110)
@@ -227,9 +397,9 @@ def generate(output):
     shot('plan-SAV-6847.png', 400, 40, 512, 380)
     c.showPage()
 
-    # 6. Example: hardship first
+    # 9. Example: hardship first
     eligible = [p for p in f['jev']['programmes'] if p['status'] == 'likely_eligible']
-    page(6, 'Example: hardship options before payment', 'Customer JEV-1240: hardship recorded on a loan case, no plan yet.',
+    page('Example: hardship options before payment', 'Customer JEV-1240: hardship recorded on a loan case, no plan yet.',
          'Source: hardship_programs.csv (v2026.1), HPT-2026, POL-COLL-004 §4.2-4.3')
     text(48, 400, 330, '<b>Programme rules checked</b><br/>effective version, product, days past due, months on book, uses in 12 months, insolvency, broken plans in 90 days.', 14, maximum=120)
     text(48, 274, 330, '<b>Likely eligible</b><br/>' + '<br/>'.join(f"{escape(p['name'])} (approver: {escape(p['approver'].replace('_', ' '))})" for p in eligible), 14, TEAL, maximum=100)
@@ -237,12 +407,12 @@ def generate(output):
     shot('plan-JEV-1240.png', 400, 40, 512, 380)
     c.showPage()
 
-    # 7. Live Call Mode
+    # 10. Live Call Mode
     call = f['call']
     red3 = next(o for o in call['calculator']['options'] if o['program_id'] == 'HP-LOAN-RED3')
     ext = next(o for o in call['calculator']['options'] if o['program_id'] == 'HP-LOAN-EXT')
     aff = call['affordability']
-    page(7, 'Live Call Mode: the plan follows the conversation', 'JEV-1240 on the phone. Every click recomputes the plan, the checks and the script with the same rules as the brief.',
+    page('Live Call Mode: the plan follows the conversation', 'JEV-1240 on the phone. Every click recomputes the plan, the checks and the script with the same rules as the brief.',
          'Source: app/call_session.py; programme terms from hardship_programs v2026.1; PRC-COLL-010 §3.1')
     top = 400
     for label, body in [
@@ -258,9 +428,9 @@ def generate(output):
     shot('call-JEV-1240.png', 420, 40, 492, 368, left_fraction=0.19)
     c.showPage()
 
-    # 8. Work queue
+    # 11. Work queue
     q = f['queue']
-    page(8, 'Work queue: fixed rules, a reason on every row', f"Agent {q['agent_id']}: {q['total']} open cases, ordered by tier, then promise date or days past due, then the next legal contact time.",
+    page('Work queue: fixed rules, a reason on every row', f"Agent {q['agent_id']}: {q['total']} open cases, ordered by tier, then promise date or days past due, then the next legal contact time.",
          'Source: app/work_queue.py; vulnerability and protected attributes never change the order')
     top = 396
     for t in q['tiers']:
@@ -272,9 +442,9 @@ def generate(output):
     shot('queue-viewport.png', 330, 40, 582, 350, top_fraction=0.02)
     c.showPage()
 
-    # 9. Scale and what is at stake
+    # 12. Scale and what is at stake
     pl, val = f['plans'], f['value']
-    page(9, f"Every open case planned nightly: {pl['customers']:,} in {pl['seconds']:.0f} s",
+    page(f"Every open case planned nightly: {pl['customers']:,} in {pl['seconds']:.0f} s",
          f"scripts/batch_plans.py: {pl['workers']} worker processes, about {pl['plans_per_second']:,.0f} plans per second, {pl['errors']} errors. Set-based loading, a separate output file, so serving is never locked.",
          'Source: data/plans-report.json; Overview "What\'s at stake" (app/portfolio_checks.py), source amounts, not claimed savings')
     labels = {'payment_ask': 'Ask for payment', 'promise': 'Follow an open promise', 'hardship': 'Offer hardship first',
@@ -300,8 +470,8 @@ def generate(output):
         text(560, 350 - i * 104, 352, f'{escape(label)} · {escape(extra)}', 12, MUTED, maximum=36)
     c.showPage()
 
-    # 10. New data without code changes
-    page(10, 'Built for the next data release, not just this one', 'Nothing in the decisions is hard-coded to this extract. A test builds a March 2027 release and the plan follows it.',
+    # 13. New data without code changes
+    page('Built for the next data release, not just this one', 'Nothing in the decisions is hard-coded to this extract. A test builds a March 2027 release and the plan follows it.',
          'Source: app/snapshot.py, app/holidays.py, tests/test_unseen_release.py')
     rows = [('Snapshot date', 'read from max(collections_cases.extract_ts)', f'{SNAPSHOT}, planning at {AS_OF:%H:%M} UTC', '24 Mar 2027'),
             ('Statutory holidays', 'computed by rule for any year', '105 of 105 flagged dates, 2016-2026', 'Good Friday 2027 skipped'),
@@ -321,10 +491,10 @@ def generate(output):
          'The rules are plain Python and SQL, so a bank can review and version them.', 12.5, MUTED, maximum=40)
     c.showPage()
 
-    # 11. Live questions
+    # 14. Live questions
     dev_ok, dev_n = f['dev']
     refusals = sum(r['refused'] == 'true' for r in f['benchmark'])
-    page(11, 'Ask what the data can answer, nothing else',
+    page('Ask what the data can answer, nothing else',
          'Questions compile into reviewed SQL with bound parameters. Model-written SQL is never executed.')
     top = 410
     for label, body in [
@@ -342,9 +512,9 @@ def generate(output):
     shot('ask-ranking.png', 450, 40, 462, 380, top_fraction=0.2)
     c.showPage()
 
-    # 12. Hardship detector
+    # 15. Hardship detector
     v1, v2 = f['hardship']['v1_current'], f['hardship']['c360-financial-v2']
-    page(12, 'Hardship detector: measured honestly', 'Customer-grouped 5-fold cross-validation, 5 seeds, 500 labelled notes; plus the original untouched held-out split.',
+    page('Hardship detector: measured honestly', 'Customer-grouped 5-fold cross-validation, 5 seeds, 500 labelled notes; plus the original untouched held-out split.',
          'Source: scripts/evaluate_hardship_cv.py, docs/hardship-detector-evaluation.md')
     for i, (metric, label) in enumerate([('recall', 'Recall: hardship notes found'), ('precision', 'Precision: flags that were right')]):
         top = 400 - i * 130
@@ -365,28 +535,26 @@ def generate(output):
          'Vulnerability tags and protected grounds are excluded from the model inputs.', 13, RED, maximum=60)
     c.showPage()
 
-    # 13. Architecture, trust, limits
-    page(13, 'Four layers, with AI, rules and people marked', None, 'Local FastAPI + Next.js; DuckDB analytics; SQLite reviews and append-only audit')
-    layers = [('1  Data Product Factory', 'Raw to curated to C360; identity links; counted quality report', [('RULES', NAVY)]),
-              ('2  Insight / NLP', 'Reviewed metric compiler, policy retrieval, one-line summaries', [('RULES', NAVY), ('AI optional', TEAL)]),
-              ('3  Feature Store', 'One versioned definition offline and live; bilingual hardship cues', [('RULES', NAVY)]),
-              ('4  Decisioning', 'Ordered plan, Call Mode, programme checks, contact window, work queue, nightly batch', [('RULES', NAVY), ('AI', TEAL), ('HUMAN', CORAL)])]
-    for i, (label, body, tags) in enumerate(layers):
-        x, y = 48 + (i % 2) * 300, 270 - (i // 2) * 130
-        c.setFillColor(HexColor('#FFFFFF')); c.setStrokeColor(HexColor(LINE)); c.setLineWidth(1.2)
-        c.roundRect(x, y, 284, 116, 8, fill=1, stroke=1)
-        text(x + 12, y + 104, 260, f'<b>{escape(label)}</b>', 14, maximum=22)
-        text(x + 12, y + 78, 260, escape(body), 11.5, MUTED, maximum=46)
-        tx = x + 12
-        for tag, col in tags:
-            tx += chip(tx, y + 10, tag, col) + 6
-    text(670, 400, 242, '<b>Verified</b>', 16, maximum=24)
-    text(670, 374, 242, f"{f['tests']:,} tests passing<br/>{dev_ok}/{dev_n} numeric reference answers<br/>{f['e2e']} browser checks, desktop and phone<br/>"
+    # 16. Rules decide, AI suggests, people approve
+    page('Rules decide, AI suggests, people approve', 'Where each kind of judgement lives in the product, and the limits we state before anyone asks.',
+         'Source: app/action_plan.py, app/features.py, app/gemini.py, app/storage.py')
+    for i, (tag, color, title, body) in enumerate([
+            ('RULES', NAVY, 'Decide', 'Contact windows, the weekly cap, restrictions, programme eligibility and the order of steps. Each step cites its policy section and source record.'),
+            ('AI', TEAL, 'Suggests', 'The cue model flags possible hardship. Gemini, when on, proposes question plans, verbatim evidence and call outcomes. Every output is checked; nothing is applied automatically.'),
+            ('HUMAN', CORAL, 'Approves', 'The agent accepts or dismisses each proposal. A supervisor approves, edits or rejects every brief and call note with a reason, in a hash-chained audit.')]):
+        x = 48 + i * 206
+        c.setFillColor(HexColor('#FFFFFF')); c.setStrokeColor(HexColor(color)); c.setLineWidth(1.6); c.roundRect(x, 150, 194, 262, 8, fill=1, stroke=1)
+        chip(x + 12, 384, tag, color)
+        text(x + 12, 372, 170, f'<b>{escape(title)}</b>', 17, maximum=26)
+        text(x + 12, 340, 170, escape(body), 11.5, MUTED, maximum=180)
+    dev_ok, dev_n = f['dev']
+    text(670, 412, 242, '<b>Verified</b>', 16, maximum=24)
+    text(670, 386, 242, f"{f['tests']:,} tests passing<br/>{dev_ok}/{dev_n} numeric reference answers<br/>{f['e2e']} browser checks, desktop and phone<br/>"
          f"{f['quality']['identity']['golden_customers']:,} golden customers", 13, TEAL, maximum=110)
-    text(670, 236, 242, '<b>Limits we state</b>', 16, maximum=24)
-    text(670, 210, 242, 'Synthetic data; no business-uplift claim. National holidays only; stated income unverified. Payday estimated for about half of cases. '
-         'Programme results are suggestions. Identity precision unmeasured.', 11.5, MUTED, maximum=120)
-    text(48, 66, 864, 'People decide: a supervisor approves, edits or rejects every brief and call note with a reason; the app never contacts a customer.', 12.5, maximum=40)
+    text(670, 270, 242, '<b>Limits we state</b>', 16, maximum=24)
+    text(670, 244, 242, 'Synthetic, templated data: no business-uplift claim. National statutory holidays only. Payday estimated for about half of cases (52%). '
+         'Gemini verified live with the lite model only. Stated income unverified; identity precision unmeasured.', 11.5, MUTED, maximum=150)
+    text(48, 112, 600, 'The app never sends a message, places a call or changes a source record. Approval only records a decision.', 13, maximum=40)
     c.showPage(); c.save()
 
     reader = PdfReader(output)

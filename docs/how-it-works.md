@@ -28,6 +28,49 @@ Data is prepared once into a DuckDB warehouse; at runtime every engine only read
 
 Read it bottom up for a request: the browser calls FastAPI, which checks the role and calls one of three engines; each engine reads DuckDB and returns JSON with its sources. The Rules engine (highlighted) is the product's core: briefs, Call Mode and the work queue all use the same `action_plan.build()`. Gemini sits behind FastAPI as an optional helper and is off when no key is saved.
 
+**The backend path of one request:**
+
+1. The browser calls `/api/*`; FastAPI checks the session and the role on every request (agents only see customers on their own cases).
+2. The endpoint calls one engine: the Rules engine (`action_plan`, `call_session`, `work_queue`), the Ask engine (question → validated plan → reviewed SQL with bound parameters, or BM25 policy search), or Customer 360.
+3. Engines read DuckDB through a read-only connection and return JSON that carries its sources (record IDs, policy sections, SQL).
+4. Only briefs, call notes, review decisions and audit events are written, to SQLite.
+5. Gemini, when enabled, receives a fixed task and a JSON schema; its reply is validated before it reaches the output. Without a key or on any failure, the local path answers.
+
+Data behind it: 1.02M customers, 2.69M contact records, 760K agent notes, 367K collections cases. A 30-day scan of all outbound contacts takes a few milliseconds; a Call Mode update about 0.17 s; a full brief about 0.23 s.
+
+## How we decided
+
+The organisers want the *why* before the *what*, so open the presentation with this. Every choice follows from five constraints we took from the policies and the data before writing code:
+
+1. **Compliance first:** a wrong step is a legal or policy breach, not a lower score.
+2. **Explainable:** every recommendation names its record and policy section.
+3. **Customer data stays inside the bank by default:** notes and transcripts are the most sensitive text.
+4. **Works on the next data release**, not only this extract.
+5. **Measured, not claimed:** every number can be reproduced.
+
+From those we used one rule to decide what kind of technology does each job:
+
+![The decision rule: four questions, asked in order for every job](how-it-works/decision-rule.png)
+
+The rule puts the LLM where language understanding helps and its mistakes can be caught, and keeps it away from numbers and compliance decisions. Each decision, the options we rejected and the evidence are in [design-decisions.md](design-decisions.md).
+
+### Why a small model and not an LLM
+
+We measured it instead of assuming. `scripts/compare_llm_classifier.py` scored the same 126 held-out notes (38 with hardship; the customer-grouped split from `train_model.py`) with Gemini 3.5 Flash-Lite, zero-shot, given the POL-COLL-004 §4.2 hardship definition and told that vulnerability markers alone are not hardship. Measured 15 Oct 2026; raw results in `data/llm-comparison.json`.
+
+| Detector | Hardship found | False alarms | Time per note | Same answer twice | Note text leaves the bank | Explains itself |
+| --- | --- | --- | --- | --- | --- | --- |
+| **What the app serves: model OR any cue** | **38 / 38** | **0** | under 1 ms | always | no | the cue and the sentence |
+| Logistic regression alone | 36 / 38 | 0 | under 1 ms | always | no | 9 named weights |
+| Rules only (any cue) | 38 / 38 | 0 | under 1 ms | always | no | the cue and the sentence |
+| Gemini 3.5 Flash-Lite, zero-shot | 38 / 38 | 4 | 1.4 s median (5.7 s at the 95th percentile) | 40 of 40 re-asked notes | yes | a yes or no |
+
+**What the four false alarms were.** Three are notes containing "cust vulnerable - financial hardship". In this bank's notes that phrase is a vulnerability tag (POL-COLL-004 §4.5), not a statement of hardship, which is why our cues deliberately exclude the bare word "hardship". Gemini flagged them despite the instruction. The fourth is a consumer proposal: an insolvency restriction, not a hardship case.
+
+**At portfolio scale.** At the measured rate, scoring all 760,594 notes one at a time would take Gemini about 12 days of calls and send every note off-site; the local detector does the whole set in minutes on a laptop.
+
+**Where an LLM can still help.** The synthetic notes reuse a small set of phrasings, so this test cannot show what an LLM would catch in real, free-form notes. That is why the LLM's role is to propose outcomes from a call note with a verbatim quote, which the agent accepts, and never to decide on its own.
+
 ## Every page, what it shows and why
 
 There are nine screens; the agent's working path is Work queue → Agent brief → Call Mode → Supervisor review. **Ctrl+K** (or the search box in the header) jumps to any page or customer from anywhere.
@@ -171,13 +214,25 @@ Every recommendation can be traced to a source record and a policy section, a pe
 - **Fairness.** Vulnerability and protected attributes never change queue order or model input; a question like "rank customers using gender" is refused, as is "export every customer's phone number".
 - **Tested.** 552 automated tests (rules, Call Mode, API, unseen release, demo customers pinned); a real-browser walkthrough passing 49 of 49 checks at desktop and phone width; 12 of 12 organiser reference answers match; the 50 submitted benchmark answers are reproduced byte for byte.
 
-## Demo flow (7 minutes)
+## Presentation flow (about 9 minutes)
 
 The live call with JEV-1240 is the centrepiece (3 of the 7 minutes). One person drives the laptop, one narrates; swap at the call so the driver plays the agent. Gemini stays off on stage. The full script with every line to say is [demo-walkthrough.md](demo-walkthrough.md); print it with `scripts/generate_demo_script_pdf.py --finals`.
 
+**Part 1 — slides before the demo (about 2 minutes, never cut):** the organisers asked every team for the architecture, the model and LLM rationale, and the decision process before the solution.
+
+| Slide | The point to land |
+| --- | --- |
+| 2. The problem | Eight checks before every call; one wrong is a breach. |
+| 3. What we found | 760 cases over the cap, 1,040 contacts outside legal hours, 18,758 hardship customers with no plan. |
+| 4. How we decided | Five constraints first; then the four-question rule: policy → rules, labelled text pattern → small model, checkable language → LLM proposes and the app verifies, otherwise a person. |
+| 5. Backend architecture | DuckDB read-only (millions of rows, scans in milliseconds); FastAPI checks the role on every call; three engines; SQLite hash-chained audit; Gemini optional behind the API. |
+| 6. Why this model, why this LLM | Measured: Gemini found the same 38 but raised 4 false alarms, 1.4 s a note, data leaves the bank. Flash-Lite because free tier, schema JSON, under 2 s. |
+
+**Part 2 — the live demo (7 minutes).** If the slot is short, drop the timeline scroll, the 30 Nov date check and the Ask question.
+
 | Time | Do | The point to land |
 | --- | --- | --- |
-| 0:00 | Overview → What's at stake | $69.8M about to be written off; $18M owed by 18,758 customers in hardship with no plan. This is debt collection. |
+| 0:00 | Overview → scroll slowly through What's at stake (the big number changes from $69.8M to $18.0M to $338.6K as you scroll; pause on each) | $69.8M about to be written off; $18M owed by 18,758 customers in hardship with no plan. This is debt collection. |
 | 0:25 | Next-step chart, then problem tiles; open the SQL on "760 cases" | Every case planned nightly in 21 s; rules are broken today (760 over the cap, 1,040 calls outside legal hours); every number is one query. |
 | 1:00 | Work queue (agent AG-7514) | A fixed, explained order, not a black-box score. |
 | 1:20 | Ctrl+K → SAV-6847 → History & contact | Mon–Tue blocked by the cap, Wed 30 Sep is a holiday, so Thu 1 Oct 07:00–21:00. Holidays are computed, not typed. |
@@ -207,6 +262,12 @@ Answer in one or two sentences, then show it in the app. If asked something not 
 **Is this a sales tool? Why do agents call customers?** No, it is debt collection: the customer already owes past-due money. The job is to recover it lawfully and fairly, which often means not asking for money first — stopping on a restriction, going through a representative, or moving someone in hardship onto a programme.
 
 **Why rules plus a small model, not an LLM agent?** Contact limits, restrictions and programme eligibility are compliance decisions; they must be deterministic, testable and auditable. The model only flags possible hardship; it can never remove a restriction or change step order.
+
+**Why logistic regression for hardship and not an LLM?** We measured it: on the same 126 held-out notes our served detector found 38/38 with 0 false alarms; Gemini 3.5 Flash-Lite also found 38 but raised 4 false alarms (three were the "cust vulnerable - financial hardship" vulnerability tag), took 1.4 s per note instead of under a millisecond, and sends note text off-site. Plus, 500 labelled notes is too few for a deep model, and 9 named weights are explainable.
+
+**Why Gemini, and why Flash-Lite?** The LLM's jobs are narrow (pick a reviewed plan, choose verbatim evidence, propose call outcomes), so fast, structured output matters more than deep reasoning. Free tier for the team, JSON-schema output we validate, under 2 s per call; 3.8 Flash was overloaded on 15 Oct. It sits behind one module, so a bank-hosted model would change no decision logic, and the app runs with no LLM at all.
+
+**Why not let the LLM write SQL? Why BM25 and not embeddings?** A generated query can be silently wrong; the model only picks from our catalogue and the backend runs reviewed SQL. Policy is 19 keyword-heavy documents and answers must cite an exact section and version, which BM25 gives deterministically with nothing extra to run.
 
 **What does Call Mode add over the brief?** The brief is preparation; Call Mode is the call. Every click recomputes the plan, checks and script with the same rules, so the agent can't promise an illegal callback or skip the hardship offer.
 

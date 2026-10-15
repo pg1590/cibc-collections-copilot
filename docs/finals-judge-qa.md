@@ -9,6 +9,31 @@ Collections agents have to combine policy, consent, promises, hardship rules and
 **Why do agents contact customers at all? Is this a sales tool?**
 No. This is debt collection: the customers already owe the bank money that is past due. The agent's job is to recover it lawfully and fairly, which often means *not* asking for money first: stopping when a restriction applies, dealing through a representative, or moving a customer in hardship onto a programme such as a reduced payment. The product's purpose is to make each of those calls correct and humane, not to sell.
 
+## Why we built it this way (architecture, model and LLM choices)
+
+The organisers asked every team to explain the reasons before the solution. Full table with options considered: [design-decisions.md](design-decisions.md).
+
+**How did you decide what uses rules, what uses a model and what uses an LLM?**
+One rule, applied to every job in order: if policy states the answer, deterministic rules; if it is a pattern in free text and we have labelled examples, a small interpretable model; if it is a language task whose output we can check against a source, an LLM that proposes while the app verifies; otherwise a person decides. It comes from five constraints we set first: compliance first, explainable, customer text stays inside the bank, works on the next data release, every number measured.
+
+**Why logistic regression for hardship and not an LLM or a deep model?**
+We measured it. On the same 126 held-out notes, the detector we ship found all 38 hardship notes with 0 false alarms. Gemini 3.5 Flash-Lite, given the policy definition, also found 38 but raised 4 false alarms: three were notes tagged "cust vulnerable - financial hardship", which policy treats as vulnerability, not hardship, and one was a consumer proposal. It took 1.4 s per note instead of under a millisecond, sends the note text off-site and gives no reason; all 760K notes would be about 12 days of calls. And 500 labelled notes is too few to train a deep model, while 9 named weights can be explained to a regulator. Where an LLM can help, on free-form call notes, it proposes with a verbatim quote and the agent confirms. Reproduce with `scripts/compare_llm_classifier.py`.
+
+**Why Gemini, and why Flash-Lite?**
+The LLM's jobs are narrow (pick one of our reviewed question plans, choose verbatim evidence, propose call outcomes with a quote), so we need fast, structured output more than deep reasoning. Gemini gave the team a free tier and native JSON-schema output, so every reply has a fixed shape we validate. On 15 October, Gemini 3.5 Flash-Lite answered in under 2 seconds; 3.8 Flash returned "high demand" (HTTP 503) or timed out, so Flash-Lite is the default. The provider sits behind one module (`app/gemini.py`) and every output passes the same validators, so another provider or a bank-hosted model would change no decision logic. The app runs with no LLM at all.
+
+**Why not let the LLM write SQL?**
+A generated query can be wrong in ways nobody sees, and the number still looks right. The model only picks a metric, grouping and period from our catalogue; the backend validates it and runs reviewed SQL with bound parameters. Result: 12/12 organiser reference answers match and the 50 benchmark answers reproduce byte for byte.
+
+**Why BM25 for policy search, not embeddings and a vector database?**
+There are 19 policy documents, the language is keyword-heavy ("rolling 7 days", "grace period"), and an answer must cite an exact section and version. BM25 is deterministic, needs no extra model or store, and returns sections we can quote whole.
+
+**Why DuckDB? Would this run on a bank's real infrastructure?**
+DuckDB is a columnar SQL engine in one local file that reads the release's Parquet directly: a 30-day scan of 2.69M contact records takes a few milliseconds, and the app opens it read-only. In a bank, the same SQL would run against its warehouse; the rules are plain Python over query results, and FastAPI, the role checks and the audit log carry over unchanged.
+
+**Why keep audit and reviews in a separate SQLite file?**
+Writes never touch customer data, and the audit must be tamper-evident: each event stores the previous event's hash and database triggers refuse updates and deletes.
+
 ## Decisioning and the step-by-step brief
 
 **Why rules plus a small model, not an LLM agent?**
