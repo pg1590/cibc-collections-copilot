@@ -96,7 +96,7 @@ export default function CustomerDetailPage() {
         }
       />
 
-      <div className="space-y-6">
+      <div className="space-y-8">
         <Card className="py-5">
           <CardContent>
             <dl className="grid gap-6 sm:grid-cols-4">
@@ -107,7 +107,7 @@ export default function CustomerDetailPage() {
                 ["Identity confidence", customer.identity_confidence],
               ].map(([label, value]) => (
                 <div key={label as string}>
-                  <dt className="text-muted-foreground text-xs font-medium tracking-wide uppercase">{label}</dt>
+                  <dt className="text-muted-foreground text-sm font-medium">{label}</dt>
                   <dd className="mt-1 font-medium break-words">{displayValue(value)}</dd>
                 </div>
               ))}
@@ -129,7 +129,7 @@ export default function CustomerDetailPage() {
               <TabsTrigger value="features">Features</TabsTrigger>
             </TabsList>
           </div>
-          <TabsContent value="history" className="space-y-6">
+          <TabsContent value="history" className="space-y-8">
             <ContactCalendar customerId={customer.customer_id} />
             <CustomerTimeline customerId={customer.customer_id} />
           </TabsContent>
@@ -149,7 +149,7 @@ export default function CustomerDetailPage() {
               <RecordTable records={identity} caption="Identity matching evidence" emptyTitle="No identity links returned" />
             </Section>
           </TabsContent>
-          <TabsContent value="notes" className="space-y-6">
+          <TabsContent value="notes" className="space-y-8">
             <Section title="Notes and evidence" description="Agent notes and interaction evidence from source systems.">
               <RecordTable records={notes} caption="Notes" emptyTitle="No notes returned" />
             </Section>

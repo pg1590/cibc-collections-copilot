@@ -1,158 +1,37 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, CircleDashed, RotateCw } from "lucide-react";
-import { PageHeader } from "@/components/page-header";
+import { AlertTriangle, RotateCw } from "lucide-react";
+import { FirstSteps, type PlanSummary } from "@/components/overview/first-steps";
+import { Identity } from "@/components/overview/identity";
+import styles from "@/components/overview/overview.module.css";
+import { Problems } from "@/components/overview/problems";
+import { money, Stakes, type ValueItem } from "@/components/overview/stakes";
 import { ErrorState, LoadingState } from "@/components/states";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import type { PortfolioCheck, PortfolioChecks } from "@/lib/plan-types";
-
-interface ValueItem {
-  id: string;
-  title: string;
-  definition: string;
-  sql: string;
-  value: number;
-  secondary: number | null;
-  tertiary: number | null;
-}
-interface PortfolioValue {
-  items: ValueItem[];
-  plans: { customers: number; plans: number; errors: number; seconds: number; plans_per_second: number; workers: number; next_step_counts: Record<string, number> } | null;
-}
-
-const NEXT_STEP_LABEL: Record<string, string> = {
-  payment_ask: "Ask for payment, timed to payday",
-  promise: "Remind about an open promise",
-  hardship: "Offer a hardship programme first",
-  restriction: "Don't contact (restriction)",
-  representative: "Contact the representative only",
-  vulnerability: "Vulnerable-customer approach first",
-  dispute: "Pause the disputed amount",
-  complaint: "Handle the open complaint",
-  placement: "Coordinate with agency or legal",
-};
-
-const money = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", notation: "compact", maximumFractionDigits: 1 });
-
-function ValueTile({ item }: { item: ValueItem }) {
-  const extra =
-    item.id === "write_off_exposure"
-      ? `Source expected-loss estimate ${money.format(item.secondary ?? 0)} · overdue ${money.format(item.tertiary ?? 0)}`
-      : item.id === "hardship_overdue"
-        ? `${formatCount(item.tertiary)} customers`
-        : `${formatCount(item.secondary)} outbound contacts`;
-  return (
-    <Card className="gap-2 py-5">
-      <CardContent className="space-y-1.5">
-        <p className="text-muted-foreground text-sm leading-snug">{item.title}</p>
-        <p className="text-3xl font-semibold tabular-nums">{money.format(item.value)}</p>
-        <p className="text-muted-foreground text-xs">{extra}</p>
-        <Collapsible>
-          <CollapsibleTrigger className="text-muted-foreground hover:text-foreground group flex items-center gap-1 text-xs underline-offset-4 hover:underline">
-            <ChevronDown className="size-3.5 transition-transform group-data-[state=open]:rotate-180" aria-hidden /> Definition and SQL
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-2 space-y-2">
-            <p className="text-xs leading-relaxed">{item.definition}</p>
-            <pre className="bg-muted/60 overflow-x-auto rounded-md p-2 font-mono text-[0.7rem] leading-relaxed whitespace-pre-wrap">{item.sql}</pre>
-          </CollapsibleContent>
-        </Collapsible>
-      </CardContent>
-    </Card>
-  );
-}
-
-function NextStepBars({ plans }: { plans: NonNullable<PortfolioValue["plans"]> }) {
-  const rows = Object.entries(plans.next_step_counts).sort((a, b) => b[1] - a[1]);
-  const max = Math.max(...rows.map(([, n]) => n), 1);
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Today&apos;s first step, across every open case</CardTitle>
-        <CardDescription>
-          The action plan was built for {formatCount(plans.plans)} customers in {plans.seconds} s ({formatCount(Math.round(plans.plans_per_second))} plans per
-          second, {plans.workers} workers{plans.errors ? `, ${plans.errors} errors` : ", no errors"}) by the nightly batch. Each bar counts the first step an
-          agent would take.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ul className="space-y-2.5" aria-label="First step by number of customers">
-          {rows.map(([key, n]) => (
-            <li key={key} className="group grid grid-cols-[minmax(0,14rem)_1fr] items-center gap-3 sm:grid-cols-[16rem_1fr]">
-              <span className="truncate text-sm" title={NEXT_STEP_LABEL[key] ?? key}>
-                {NEXT_STEP_LABEL[key] ?? key}
-              </span>
-              <span className="flex items-center gap-2" title={`${NEXT_STEP_LABEL[key] ?? key}: ${formatCount(n)} customers (${((n / plans.plans) * 100).toFixed(1)}%)`}>
-                <span
-                  className="bg-primary group-hover:bg-primary/80 h-3.5 rounded-r-[4px] transition-colors"
-                  style={{ width: `${Math.max((n / max) * 100, 1)}%` }}
-                  aria-hidden
-                />
-                <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                  {formatCount(n)} · {((n / plans.plans) * 100).toFixed(0)}%
-                </span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
-  );
-}
+import { Skeleton } from "@/components/ui/skeleton";
 import { canSee, useAuth } from "@/lib/auth";
+import type { PortfolioChecks } from "@/lib/plan-types";
 import { useApi } from "@/lib/use-api";
 import type { Health, Overview } from "@/lib/types";
 import { formatCad, formatCount } from "@/lib/utils";
 
-function Stat({ label, value, hint, href, tone }: { label: string; value: string; hint: string; href?: string; tone?: "review" }) {
-  const body = (
-    <Card className="h-full gap-2 py-5 transition-colors group-hover:border-primary/40">
-      <CardContent className="space-y-1">
-        <p className="text-muted-foreground text-sm">{label}</p>
-        <p className={tone === "review" ? "text-review-foreground text-3xl font-semibold tabular-nums" : "text-3xl font-semibold tabular-nums"}>
-          {value}
-        </p>
-        <p className="text-muted-foreground text-xs">{hint}</p>
-      </CardContent>
-    </Card>
-  );
-  return href ? (
-    <Link href={href} className="group rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40">
-      {body}
-    </Link>
-  ) : (
-    body
-  );
+interface PortfolioValue {
+  items: ValueItem[];
+  plans: PlanSummary | null;
 }
 
-function CheckCard({ check }: { check: PortfolioCheck }) {
-  return (
-    <Card className={check.severity === "high" ? "border-l-review gap-3 border-l-4 py-5" : "gap-3 py-5"}>
-      <CardContent className="space-y-2">
-        <p className="text-muted-foreground text-sm leading-snug">{check.title}</p>
-        <p className="text-3xl font-semibold tabular-nums">
-          {formatCount(check.value)} <span className="text-muted-foreground text-sm font-normal">{check.unit}</span>
-        </p>
-        <p className="text-sm leading-snug">{check.action}</p>
-        <Collapsible>
-          <CollapsibleTrigger className="text-muted-foreground hover:text-foreground group flex items-center gap-1 text-xs underline-offset-4 hover:underline">
-            <ChevronDown className="size-3.5 transition-transform group-data-[state=open]:rotate-180" aria-hidden /> Definition and SQL
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-2 space-y-2">
-            <p className="text-xs leading-relaxed">{check.definition}</p>
-            <Badge variant="teal" className="font-mono whitespace-normal">
-              {check.policy}
-            </Badge>
-            <pre className="bg-muted/60 overflow-x-auto rounded-md p-2 font-mono text-[0.7rem] leading-relaxed whitespace-pre-wrap">{check.sql}</pre>
-          </CollapsibleContent>
-        </Collapsible>
-      </CardContent>
-    </Card>
-  );
+function greeting(now = new Date()) {
+  const hour = now.getHours();
+  return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+}
+
+function asOf(snapshot: string | null | undefined) {
+  if (!snapshot) return null;
+  const date = new Date(`${snapshot}T12:00:00`);
+  return Number.isNaN(date.getTime())
+    ? snapshot
+    : date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 }
 
 export default function OverviewPage() {
@@ -164,217 +43,127 @@ export default function OverviewPage() {
   const checks = useApi<PortfolioChecks>(showChecks ? "/overview/checks" : null);
   const value = useApi<PortfolioValue>(showChecks ? "/overview/value" : null);
 
-  const identity = overview.data?.identity;
-  const identityTotal = identity ? identity.matched + identity.review + identity.unmatched : 0;
-  const segments = identity
+  const refresh = () => {
+    health.reload();
+    overview.reload();
+    if (showChecks) {
+      checks.reload();
+      value.reload();
+    }
+  };
+
+  const data = overview.data;
+  const yours = role === "agent";
+  const date = asOf(health.data?.snapshot_date);
+  const headline = data
     ? [
-        { key: "matched", label: "Matched", value: identity.matched, color: "bg-primary" },
-        { key: "review", label: "Needs review", value: identity.review, color: "bg-review" },
-        { key: "unmatched", label: "Unmatched", value: identity.unmatched, color: "bg-muted-foreground/40" },
+        { label: yours ? "Your open cases" : "Open cases", value: formatCount(data.open_cases), full: undefined },
+        { label: yours ? "Overdue on your cases" : "Overdue", value: money.format(data.overdue_cad), full: formatCad(data.overdue_cad) },
+        { label: yours ? "Your customers" : "Customers", value: formatCount(data.customers), full: undefined },
       ]
     : [];
 
   return (
-    <>
-      <PageHeader
-        title="Overview"
-        description="Counts produced by the data pipeline for the current snapshot. Nothing on this page is estimated."
-        actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              health.reload();
-              overview.reload();
-              if (showChecks) {
-                checks.reload();
-                value.reload();
-              }
-            }}
-          >
-            <RotateCw aria-hidden /> Refresh
-          </Button>
-        }
-      />
+    <div className="space-y-16 sm:space-y-20">
+      {/* Chapter 0: greeting and the three numbers that matter most. */}
+      <div className="pt-2">
+        <div className={styles.heroText}>
+          <div className="flex items-start justify-between gap-4">
+            <p className="text-muted-foreground text-lg">{greeting()}</p>
+            <button
+              type="button"
+              onClick={refresh}
+              className="text-muted-foreground hover:text-foreground hover:bg-paper/70 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35"
+            >
+              <RotateCw className="size-4" aria-hidden /> Refresh
+            </button>
+          </div>
+          <h1 className="mt-2 text-[2.5rem] leading-[1.08] font-normal tracking-[-0.025em] sm:text-[3.25rem]">
+            Here&apos;s where things stand.
+          </h1>
+          {date && (
+            <p className="text-muted-foreground mt-4 max-w-xl text-[1.0625rem] leading-relaxed">
+              Counts from the data build as of {date}. Nothing on this page is estimated unless it says so.
+            </p>
+          )}
+        </div>
 
-      <section aria-labelledby="pipeline-heading" className="mb-8">
-        <h2 id="pipeline-heading" className="sr-only">
-          Pipeline state
-        </h2>
-        {health.loading ? (
-          <LoadingState label="Checking pipeline" rows={1} />
-        ) : health.error ? (
-          <ErrorState title="Backend not reachable" message={health.error} onRetry={health.reload} />
-        ) : health.data && (
-          <Card className="py-4">
-            <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3 text-sm">
-              <span className="flex items-center gap-2">
-                {health.data.dataset_ready ? (
-                  <CheckCircle2 className="text-success size-4" aria-hidden />
-                ) : (
-                  <CircleDashed className="text-review size-4" aria-hidden />
-                )}
-                <span className="font-medium">{health.data.dataset_ready ? "Dataset loaded" : "Dataset not loaded yet"}</span>
-              </span>
-              <span>
-                <span className="text-muted-foreground">Snapshot </span>
-                <span className="font-medium">{health.data.snapshot_date ?? "—"}</span>
-              </span>
-              <span>
-                <span className="text-muted-foreground">Runtime </span>
-                <span className="font-medium">{health.data.runtime_mode}</span>
-              </span>
-              <span>
-                <span className="text-muted-foreground">API status </span>
-                <span className="font-medium">{health.data.status}</span>
-              </span>
-            </CardContent>
-          </Card>
-        )}
-      </section>
-
-      {overview.loading ? (
-        <LoadingState label="Loading overview" rows={4} />
-      ) : overview.error ? (
-        health.data && !health.data.dataset_ready ? (
-          <Alert variant="review">
-            <AlertTriangle aria-hidden />
-            <AlertTitle>No counts yet</AlertTitle>
-            <AlertDescription>
-              <p>The pipeline has not built the dataset, so there is nothing to count. Backend says: {overview.error}</p>
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <ErrorState message={overview.error} onRetry={overview.reload} />
-        )
-      ) : (
-        overview.data && (
-          <div className="space-y-8">
-            <section aria-label="Key counts" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Stat label="Customers" value={formatCount(overview.data.customers)} hint="Golden customer records" href="/customers" />
-              <Stat label="Open cases" value={formatCount(overview.data.open_cases)} hint="Collections cases still open" />
-              <Stat label="Overdue balance" value={formatCad(overview.data.overdue_cad)} hint="Total past-due amount, CAD" />
-              <Stat
-                label="Pending reviews"
-                value={formatCount(overview.data.pending_reviews)}
-                hint="Agent drafts waiting for a supervisor"
-                href={canSee(role, "reviews") ? "/reviews" : undefined}
-                tone={overview.data.pending_reviews > 0 ? "review" : undefined}
-              />
-              <Stat
-                label="Data quality issues"
-                value={formatCount(overview.data.quality_issues)}
-                hint="Failed checks in the latest build"
-                href={canSee(role, "quality") ? "/quality" : undefined}
-              />
-            </section>
-
-            {showChecks && (
-              <section aria-labelledby="checks-heading" className="space-y-3">
-                <div>
-                  <h2 id="checks-heading" className="text-lg font-semibold">
-                    Problems across all customers
-                  </h2>
-                  <p className="text-muted-foreground text-sm">
-                    Policy checks over the whole portfolio at the snapshot. Each number is one SQL query you can open and rerun.
-                  </p>
-                </div>
-                {checks.loading ? (
-                  <LoadingState label="Running portfolio checks" rows={2} />
-                ) : checks.error ? (
-                  <ErrorState message={checks.error} onRetry={checks.reload} />
-                ) : (
-                  checks.data && (
-                    <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      {checks.data.items.map((c) => (
-                        <CheckCard key={c.id} check={c} />
-                      ))}
-                    </div>
-                  )
-                )}
-              </section>
-            )}
-
-            {showChecks && value.data && (
-              <section aria-labelledby="value-heading" className="space-y-3">
-                <div>
-                  <h2 id="value-heading" className="text-lg font-semibold">
-                    What&apos;s at stake
-                  </h2>
-                  <p className="text-muted-foreground text-sm">Measured balances and spend behind the problems above. Source estimates are labelled as estimates.</p>
-                </div>
-                <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {value.data.items.map((item) => (
-                    <ValueTile key={item.id} item={item} />
-                  ))}
-                </div>
-                {value.data.plans && <NextStepBars plans={value.data.plans} />}
-              </section>
-            )}
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Identity matching</CardTitle>
-                <CardDescription>
-                  How source-system customer keys were linked to one golden customer ID. “Needs review” means the match is
-                  uncertain and should be checked by a person.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {identityTotal > 0 ? (
-                  <div className="bg-muted flex h-3 w-full overflow-hidden rounded-full" aria-hidden>
-                    {segments.map((s) =>
-                      s.value > 0 ? <div key={s.key} className={s.color} style={{ width: `${(s.value / identityTotal) * 100}%` }} /> : null,
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground text-sm">No identity results reported.</p>
-                )}
-                <dl className="grid gap-4 sm:grid-cols-3">
-                  {segments.map((s) => (
-                    <div key={s.key} className="flex items-start gap-2.5">
-                      <span className={`${s.color} mt-1.5 size-2.5 shrink-0 rounded-full`} aria-hidden />
-                      <div>
-                        <dt className="text-muted-foreground text-sm">{s.label}</dt>
-                        <dd className="text-xl font-semibold tabular-nums">
-                          {formatCount(s.value)}
-                          {identityTotal > 0 && (
-                            <span className="text-muted-foreground ml-2 text-sm font-normal">
-                              {((s.value / identityTotal) * 100).toFixed(1)}%
-                            </span>
-                          )}
-                        </dd>
-                      </div>
+        <div className={styles.heroNumbers}>
+          {overview.loading ? (
+            <div role="status" className="mt-10 grid gap-8 sm:grid-cols-3">
+              <span className="sr-only">Loading overview…</span>
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-20 rounded-2xl" />
+              ))}
+            </div>
+          ) : overview.error ? (
+            <div className="mt-10">
+              {health.data && !health.data.dataset_ready ? (
+                <Alert variant="review">
+                  <AlertTriangle aria-hidden />
+                  <AlertTitle>No counts yet</AlertTitle>
+                  <AlertDescription>
+                    <p>The data build hasn&apos;t run, so there is nothing to count yet. Backend says: {overview.error}</p>
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <ErrorState message={overview.error} onRetry={overview.reload} />
+              )}
+            </div>
+          ) : (
+            data && (
+              <>
+                <dl className="mt-10 grid gap-8 sm:grid-cols-3">
+                  {headline.map((h) => (
+                    <div key={h.label} className="flex flex-col-reverse">
+                      <dt className="text-muted-foreground mt-3 text-[1.0625rem]">{h.label}</dt>
+                      <dd className="text-[3rem] leading-none tracking-[-0.03em] tabular-nums sm:text-[3.5rem] lg:text-[4.25rem]" title={h.full}>
+                        {h.value}
+                      </dd>
                     </div>
                   ))}
                 </dl>
-              </CardContent>
-            </Card>
+                {data.pending_reviews > 0 && canSee(role, "reviews") && (
+                  <Link
+                    href="/reviews"
+                    className="bg-review-soft text-review-foreground hover:bg-review-soft/70 mt-8 inline-flex items-center gap-2.5 rounded-full px-4 py-2 text-[0.9375rem] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35"
+                  >
+                    <span className="bg-review size-2 rounded-full" aria-hidden />
+                    {yours
+                      ? `${formatCount(data.pending_reviews)} of your drafts ${data.pending_reviews === 1 ? "is" : "are"} waiting for a supervisor`
+                      : `${formatCount(data.pending_reviews)} ${data.pending_reviews === 1 ? "draft is" : "drafts are"} waiting for your review`}
+                  </Link>
+                )}
+              </>
+            )
+          )}
+        </div>
+      </div>
 
-            <nav aria-label="Next steps" className="flex flex-wrap gap-2">
-              {canSee(role, "ask") && (
-                <Button asChild variant="outline">
-                  <Link href="/ask">
-                    Ask a question <ArrowRight aria-hidden />
-                  </Link>
-                </Button>
-              )}
-              {canSee(role, "briefs") && (
-                <Button asChild variant="outline">
-                  <Link href="/briefs">
-                    Prepare an agent brief <ArrowRight aria-hidden />
-                  </Link>
-                </Button>
-              )}
-              {overview.data.pending_reviews > 0 && canSee(role, "reviews") && (
-                <Badge variant="review" className="self-center">
-                  {formatCount(overview.data.pending_reviews)} awaiting review
-                </Badge>
-              )}
-            </nav>
-          </div>
-        )
+      {/* Chapter 1: what needs attention (analysts and supervisors). */}
+      {showChecks &&
+        (checks.loading ? (
+          <LoadingState label="Running portfolio checks" rows={3} />
+        ) : checks.error ? (
+          <ErrorState message={checks.error} onRetry={checks.reload} />
+        ) : (
+          checks.data && <Problems checks={checks.data.items} />
+        ))}
+
+      {/* Chapter 2: the money behind it, told step by step. */}
+      {showChecks && value.data && value.data.items.length > 0 && <Stakes items={value.data.items} />}
+
+      {/* Chapter 3: how tomorrow's calls begin. */}
+      {showChecks && value.data?.plans && <FirstSteps plans={value.data.plans} />}
+
+      {/* Chapter 4: how the data was joined. */}
+      {data && (
+        <Identity
+          identity={data.identity}
+          qualityIssues={data.quality_issues}
+          qualityHref={canSee(role, "quality") ? "/quality" : undefined}
+        />
       )}
-    </>
+    </div>
   );
 }

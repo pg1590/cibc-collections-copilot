@@ -32,7 +32,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "text-muted-foreground h-10 px-3 text-left align-middle text-xs font-medium tracking-wide uppercase whitespace-nowrap",
+        "text-muted-foreground h-11 px-4 text-left align-middle text-sm font-medium whitespace-nowrap",
         className,
       )}
       {...props}
@@ -41,7 +41,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
 }
 
 function TableCell({ className, ...props }: React.ComponentProps<"td">) {
-  return <td data-slot="table-cell" className={cn("px-3 py-2.5 align-middle", className)} {...props} />;
+  return <td data-slot="table-cell" className={cn("px-4 py-3.5 align-middle", className)} {...props} />;
 }
 
 function TableCaption({ className, ...props }: React.ComponentProps<"caption">) {

@@ -1,0 +1,83 @@
+/*
+ * Overview motion. Scroll-linked effects use CSS scroll timelines where the
+ * browser supports them and simply stay still elsewhere; one-shot reveals use
+ * IntersectionObserver (see components/motion/reveal.tsx).
+ */
+
+/* Hero parallax: the greeting and the numbers drift at different speeds and
+   soften into blur as the first chapter scrolls up beneath them. */
+@supports (animation-timeline: scroll()) {
+  .heroText,
+  .heroNumbers {
+    animation: hero-drift linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0 62vh;
+  }
+  .heroText {
+    --drift: 6vh;
+  }
+  .heroNumbers {
+    --drift: 14vh;
+  }
+}
+@keyframes hero-drift {
+  to {
+    translate: 0 var(--drift);
+    opacity: 0;
+    filter: blur(10px);
+  }
+}
+
+/* Bars grow from the left once their list is in view, one after another. */
+.bar {
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform 1.1s cubic-bezier(0.22, 0.7, 0.18, 1) calc(var(--i, 0) * 90ms + 150ms);
+}
+[data-shown="true"] .bar {
+  transform: scaleX(1);
+}
+
+/* Scrollytelling: the sticky figure swaps as each step reaches mid-screen. */
+.figure {
+  grid-area: 1 / 1;
+  transition:
+    opacity 0.55s ease,
+    filter 0.55s ease,
+    translate 0.55s cubic-bezier(0.22, 0.7, 0.18, 1);
+}
+.figure[data-active="false"] {
+  opacity: 0;
+  filter: blur(10px);
+  translate: 0 14px;
+  pointer-events: none;
+}
+.step {
+  transition: opacity 0.5s ease;
+}
+@media (min-width: 64rem) {
+  .step[data-active="false"] {
+    opacity: 0.38;
+  }
+}
+.tick {
+  transition:
+    background-color 0.4s ease,
+    width 0.4s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heroText,
+  .heroNumbers {
+    animation: none;
+  }
+  .bar,
+  .figure,
+  .step,
+  .tick {
+    transition: none;
+  }
+  .bar {
+    transform: none;
+  }
+}

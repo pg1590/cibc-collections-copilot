@@ -175,7 +175,7 @@ export function CustomerTimeline({ customerId }: { customerId: string }) {
                           <span className="text-muted-foreground ml-auto text-xs whitespace-nowrap">{when(e.ts)}</span>
                         </div>
                         {e.detail && <p className="text-muted-foreground mt-0.5 line-clamp-3 text-sm">{e.detail}</p>}
-                        <p className="text-muted-foreground font-mono text-[0.7rem]">
+                        <p className="text-muted-foreground font-mono text-[0.75rem]">
                           {e.ref}
                           {e.case_id && e.case_id !== e.ref ? ` · ${e.case_id}` : ""}
                         </p>
@@ -245,7 +245,7 @@ export function ContactCalendar({ customerId }: { customerId: string }) {
                           {Icon && <Icon className="size-3.5" aria-hidden />} {style.label}
                         </p>
                       )}
-                      {d.reason && <p className="text-muted-foreground mt-0.5 line-clamp-2 text-[0.7rem] leading-snug">{d.reason}</p>}
+                      {d.reason && <p className="text-muted-foreground mt-0.5 line-clamp-2 text-[0.75rem] leading-snug">{d.reason}</p>}
                     </li>
                   );
                 })}

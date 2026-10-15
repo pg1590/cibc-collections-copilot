@@ -138,9 +138,9 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
             aria-controls="palette-results"
             aria-activedescendant={items[active] ? `palette-${items[active].id}` : undefined}
           />
-          <kbd className="text-muted-foreground rounded border px-1.5 text-[0.65rem]">Esc</kbd>
+          <kbd className="text-muted-foreground rounded border px-1.5 text-[0.75rem]">Esc</kbd>
         </div>
-        <ul id="palette-results" role="listbox" className="max-h-80 overflow-y-auto p-2">
+        <ul id="palette-results" role="listbox" data-lenis-prevent className="max-h-80 overflow-y-auto p-2">
           {items.length ? (
             items.map((item, i) => {
               const Icon = item.icon;
@@ -166,7 +166,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
             <li className="text-muted-foreground px-3 py-6 text-center text-sm">No matches. Try a customer ID like SAV-6847.</li>
           )}
         </ul>
-        <div className="text-muted-foreground flex gap-4 border-t px-4 py-2 text-[0.7rem]">
+        <div className="text-muted-foreground flex gap-4 border-t px-4 py-2 text-[0.75rem]">
           <span>↑↓ to move</span>
           <span>Enter to open</span>
           <span className="ml-auto">Ctrl K to toggle</span>
