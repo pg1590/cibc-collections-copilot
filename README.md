@@ -20,7 +20,7 @@ The prelim submission is tagged `prelim-submission`. For the finals we added:
 - **Question box for live questions.** Monthly trends, rankings, counts and hardship-programme lookups; a one-line plain-English summary first; unsupported questions get a clarification with supported rephrasings instead of a substituted number.
 - **Hardship detector v2.** Wider English and French cues plus illness, separation and disaster cues from POL-COLL-004 §4.2, measured with customer-grouped cross-validation; retrained, it finds 36 of 38 held-out hardship notes with no false alarms ([evaluation](docs/hardship-detector-evaluation.md)).
 - **Verification.** A rendered-browser walkthrough at desktop and phone width, including Call Mode, the blocked customer, the calendar and the palette: 49 of 49 checks ([scripts/e2e_finals.mjs](scripts/e2e_finals.mjs)), and pinned demo customers ([tests/test_demo_customers.py](tests/test_demo_customers.py)). It found and fixed a concurrency bug in the database lockdown.
-- **Presentation material.** The [architecture diagram](docs/architecture-build.pdf), a 13-slide finals deck generated from measured results ([scripts/generate_finals_deck.py](scripts/generate_finals_deck.py)), the [live demo script](docs/demo-walkthrough.md) and [judge Q&A preparation](docs/finals-judge-qa.md).
+- **Presentation material.** The [architecture diagram](docs/architecture-build.pdf), a 13-slide finals deck generated from measured results ([scripts/generate_finals_deck.py](scripts/generate_finals_deck.py)), the [live demo script](docs/demo-walkthrough.md), [judge Q&A preparation](docs/finals-judge-qa.md) and a [team guide to how the product works](docs/how-it-works.md).
 - **Cleanup.** Prelim planning notes and process reviews moved to [docs/archive](docs/archive/README.md).
 
 ## The problem we address
@@ -387,7 +387,7 @@ These are local checks, not an organizer score. Correctness of the extra answers
 - [Combined build plan](docs/archive/prelim/reviews/build-plan-review.md)
 - [Build status and remaining work](docs/archive/prelim/build-status.md)
 - [Final submission checklist](docs/archive/prelim/submission-checklist.md)
-- [Finals live demo script](docs/demo-walkthrough.md) and [judge Q&A preparation](docs/finals-judge-qa.md)
+- [Finals live demo script](docs/demo-walkthrough.md), [judge Q&A preparation](docs/finals-judge-qa.md) and [team guide to how the product works](docs/how-it-works.md)
 - [Hardship detector evaluation](docs/hardship-detector-evaluation.md)
 - [Prelim recording walkthrough](docs/archive/prelim/demo-walkthrough.md)
 - [Historical design-phase document](docs/system-design.md)
