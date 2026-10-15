@@ -19,11 +19,21 @@ function check(name, ok, detail = "") {
 }
 
 async function login(page, role) {
-  await page.goto(`${BASE}/login`);
-  await page.fill("#username", role);
-  await page.fill("#password", `${role}-demo`);
-  await page.click('button[type="submit"]');
-  await page.waitForFunction(() => location.pathname === "/overview", null, { timeout: 90000 });
+  // The sign-in page must be hydrated before submitting, or the click is a no-op;
+  // wait for the network to settle and retry a few times on a slow first compile.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await page.goto(`${BASE}/login`);
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await page.fill("#username", role);
+    await page.fill("#password", `${role}-demo`);
+    await page.click('button[type="submit"]');
+    const ok = await page
+      .waitForFunction(() => location.pathname === "/overview", null, { timeout: 30000 })
+      .then(() => true)
+      .catch(() => false);
+    if (ok) return;
+  }
+  throw new Error(`could not sign in as ${role}`);
 }
 
 async function tick(page, locator) {
