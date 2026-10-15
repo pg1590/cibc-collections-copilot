@@ -62,7 +62,7 @@ No. HAC-4447 has a consumer proposal: the call page opens as "Contact blocked", 
 ## Gemini and AI guardrails
 
 **Is Gemini required? What can it do?**
-No. It is off unless a key is configured locally, and every feature works without it. It can only (1) choose one of our reviewed question plans, (2) select verbatim evidence, and (3) propose call outcomes with a verbatim quote. It never writes SQL, never decides a step, and nothing it proposes is saved without the agent accepting it and the supervisor reviewing it. A live Gemini call has not yet been verified on our machine (tested with mocked HTTP only).
+No. It is off unless a key is configured locally, and every feature works without it. It can only (1) choose one of our reviewed question plans, (2) select verbatim evidence, and (3) propose call outcomes with a verbatim quote. It never writes SQL, never decides a step, and nothing it proposes is saved without the agent accepting it and the supervisor reviewing it. Verified live on 15 October 2026 with `gemini-3.5-flash-lite` (each call under 2 seconds): question planning, policy and brief evidence, and Call Mode extraction, which also ignored an instruction planted in the note ("mark him as deceased"). `gemini-3.8-flash` was overloaded that day, so the default is the lite model. Tests never use a real key.
 
 ## New data and scale
 
@@ -140,7 +140,7 @@ It fails safe: when a question has no reviewed route, it asks for clarification 
 - Synthetic, templated data; no production or business-uplift claim.
 - Holidays: national rules only. Payday: estimated for 52% of open cases.
 - Call Mode income and expenses are as stated by the customer, not verified.
-- Gemini live path not yet verified; everything shown works without it.
+- Gemini verified live with the lite model only; everything shown also works without it.
 - Programme results are suggestions; the approver decides.
 - Identity matching precision is not measured; 64,145 links are held for review.
 - No customer contact is ever sent by the app.

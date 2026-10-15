@@ -160,3 +160,15 @@ def test_unrelated_requests_do_not_hold_network_lock(configured):
         first=pool.submit(client.plan,'first question',{})
         second=pool.submit(client.plan,'second question',{})
         assert first.result()['metric_id']==second.result()['metric_id']=='open_cases'
+
+
+def test_policy_label_is_only_offered_with_a_policy_source(configured):
+    offered = []
+    def send(request):
+        schema = json.loads(request.content)['response_format']['schema']
+        offered.append(schema['properties']['items']['items']['properties']['label']['enum'])
+        return response({'items': [{'source_id': 'review-rule', 'quote': 'Hardship is recorded on the case.', 'label': 'Evidence'}]})
+    client = GeminiClient(httpx.MockTransport(send))
+    client.summarise('review brief', {'review-rule': 'Hardship is recorded on the case.'})
+    client.summarise('policy', {'review-rule': 'Hardship is recorded on the case.', 'POL-COLL-004 v4.2 §4.2': 'Offer hardship options first.'})
+    assert offered == [['Evidence'], ['Evidence', 'Policy']]

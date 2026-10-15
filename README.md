@@ -120,7 +120,7 @@ flowchart TB
 
 ### Which AI model is used?
 
-**The application runs without an external API key.** Local question plans, document retrieval, extractive evidence and brief rules remain available. The API and benchmark exporter share an optional Gemini integration for structured question planning and source-backed explanations. Its supported default is `gemini-3.8-flash`; `gemini-3.5-flash-lite` is an alternative.
+**The application runs without an external API key.** Local question plans, document retrieval, extractive evidence and brief rules remain available. The API and benchmark exporter share an optional Gemini integration for structured question planning and source-backed explanations. Its default is `gemini-3.5-flash-lite`, which answered in under 2 seconds in our live test (15 October 2026); `gemini-3.8-flash` is supported but was returning "high demand" errors or timing out that day.
 
 Gemini selects a supported metric, grouping and date range; the backend validates the plan and compiles reviewed local SQL. Model-written SQL is never executed. Numeric answers and result tables come from DuckDB. Optional explanations select complete supplied evidence units, such as policy paragraphs or a result row; source IDs and the entire quoted unit must match before display. Fragment quotations and unsupported narrative are rejected. Numeric answers, original brief facts, recommendations and drafts are preserved; supporting evidence appears separately. If Gemini is unavailable or its response fails validation, the application uses local behavior. Recorded hardship, contact restrictions and supervisor approval stay under explicit application rules.
 
@@ -233,7 +233,7 @@ Save the key locally in the ignored `data/gemini-key.txt`, or export `GEMINI_API
 | Variable | Behavior |
 |---|---|
 | `COPILOT_GEMINI_ENABLED` | Defaults to `1`; no key means local mode. Set `0` to disable external calls. |
-| `COPILOT_GEMINI_MODEL` | Defaults to `gemini-3.8-flash`; also accepts `gemini-3.5-flash-lite`. |
+| `COPILOT_GEMINI_MODEL` | Defaults to `gemini-3.5-flash-lite`; also accepts `gemini-3.8-flash`. |
 | `COPILOT_GEMINI_TIMEOUT` | Defaults to 15 seconds; capped at 30 seconds per request. |
 | `COPILOT_GEMINI_MAX_CALLS` | Defaults to 60; hard cap of 100 requests per service process/worker. Each worker and restart has its own budget. |
 | `COPILOT_GEMINI_TEXT_EVIDENCE` | Defaults to `0`; note and transcript text stays local. Set `1` to permit selected text evidence. |
@@ -301,6 +301,8 @@ To regenerate released benchmark answers through the same engine used by `/api/a
 ```bash
 .venv/bin/python scripts/run_benchmark.py
 ```
+
+With a Gemini key saved, add `--local` so the run makes no provider calls and reproduces the released file exactly.
 
 Output: `submission/benchmark_answers.csv`, with columns `question_id,answer,sql_or_sources,refused`. The engine does not look up released reference answers at runtime. Reference SQL is used only by the independent development validation. Generated answers must not be edited manually.
 

@@ -115,11 +115,11 @@ AI only suggests; rules and people decide. The app runs fully without any extern
 
 **Model results to quote.** On 500 public labelled notes (146 hardship), customer-grouped 5-fold cross-validation over 5 seeds: recall **95.2%**, precision **98.0%** (v1 cues: 68.4% / 90.3%). On the original held-out split of 126 notes, not looked at while designing the cues: **36 of 38** hardship notes found, **0 false alarms**. Be honest that the synthetic notes reuse a small set of phrasings, so this is coverage of this dataset, not production performance.
 
-**Gemini cost and privacy controls:** model `gemini-3.8-flash` by default; 15 s timeout; at most 60 calls per process (hard cap 100); no retries; `store=false`. Note and transcript text — including notes typed in Call Mode — stays local unless `COPILOT_GEMINI_TEXT_EVIDENCE=1`. The full dataset is never uploaded.
+**Gemini cost and privacy controls:** model `gemini-3.5-flash-lite` by default (`gemini-3.8-flash` was overloaded in our live test); 15 s timeout; at most 60 calls per process (hard cap 100); no retries; `store=false`. Note and transcript text — including notes typed in Call Mode — stays local unless `COPILOT_GEMINI_TEXT_EVIDENCE=1`. The full dataset is never uploaded.
 
 **Voice (optional).** Whisper base runs locally on the CPU to transcribe the supplied call recordings. Its cues are shown for a person to inspect but never feed the model or change a recommendation, because the transcript has no speaker labels.
 
-**Status today:** the Gemini path has not yet been run against the live API (no key saved). Everything shown in the demo works on the local path.
+**Verified live on 15 Oct 2026** with `gemini-3.5-flash-lite`: question planning (it correctly declines non-metric questions), policy evidence, brief evidence on the five demo customers, and Call Mode extraction (it found all four outcomes in the demo note and ignored a planted "mark him as deceased" instruction). Each call took under 2 seconds. Everything shown in the demo also works with Gemini off.
 
 ## Works on new data
 
@@ -214,7 +214,7 @@ Answer in one or two sentences, then show it in the app. If asked something not 
 
 **Can an agent call someone they shouldn't?** No. HAC-4447 (consumer proposal) opens as "Contact blocked" with no script. Agents can only open their own customers; this is enforced on the server.
 
-**Is Gemini required? What if it makes something up?** Not required; everything runs locally. It can only choose one of our reviewed question plans, pick verbatim evidence, or propose call outcomes with a verbatim quote. Anything whose quote isn't in the source is dropped; model SQL is never run; the agent accepts and a supervisor approves. Typed notes only leave the machine if text evidence is switched on. Be honest: the live Gemini path hasn't been verified yet.
+**Is Gemini required? What if it makes something up?** Not required; everything runs locally. It can only choose one of our reviewed question plans, pick verbatim evidence, or propose call outcomes with a verbatim quote. Anything whose quote isn't in the source is dropped; model SQL is never run; the agent accepts and a supervisor approves. Typed notes only leave the machine if text evidence is switched on. It was verified live on 15 Oct, including ignoring an instruction planted in a note.
 
 **Does it only work on your dataset?** No hard-coded dates or limits. Snapshot, holidays, per-case caps, policy versions and programme terms all come from the data; a test builds a 2027 release and the app follows it. A bank with a different schema would map its tables to ours once.
 
