@@ -1,10 +1,13 @@
 # Finals: likely judge questions and our answers
 
-Prepared 14 October 2026 for the live demo and Q&A. Every number below was measured on the local release (snapshot 28 September 2026) and can be reproduced with the command or SQL named next to it. If a judge asks for something not listed here, say what we measured and what we did not.
+Prepared 14 October 2026 and updated 15 October 2026 for the finals build (Call Mode, new-extract support, the nightly batch). Every number below was measured on the local release (snapshot 28 September 2026) and can be reproduced with the command or SQL named next to it. If a judge asks for something not listed here, say what we measured and what we did not.
 
 ## The product in one minute
 
-Collections agents have to combine policy, consent, promises, hardship rules and contact limits before every call. Collections Copilot turns that into an ordered to-do list per customer, where each step says why and which policy section it follows. A work queue sorts each agent's cases by a fixed, explainable rule. An Overview page shows policy problems across all 96,000 open cases, each backed by one SQL query. A supervisor reviews every brief; the app never contacts customers.
+Collections agents have to combine policy, consent, promises, hardship rules and contact limits before every call. Collections Copilot turns that into an ordered to-do list per customer, where each step says why and which policy section it follows. A work queue sorts each agent's cases by a fixed, explainable rule. An Overview page shows policy problems across all 96,000 open cases, each backed by one SQL query. During the call, Call Mode records what the customer says and rechecks the plan live. A supervisor reviews every brief and call note; the app never contacts customers.
+
+**Why do agents contact customers at all? Is this a sales tool?**
+No. This is debt collection: the customers already owe the bank money that is past due. The agent's job is to recover it lawfully and fairly, which often means *not* asking for money first: stopping when a restriction applies, dealing through a representative, or moving a customer in hardship onto a programme such as a reduced payment. The product's purpose is to make each of those calls correct and humane, not to sell.
 
 ## Decisioning and the step-by-step brief
 
@@ -25,7 +28,7 @@ Contact restrictions, contact caps and programme eligibility are compliance deci
 The customer's own time zone (from the customer record, falling back to the FSA/province in `geo_reference`). Calls between 07:00 and 21:00 local; Sundays only 13:00-17:00 and only where the customer permits Sunday contact; no contact on statutory holidays; and no more than 3 outbound attempts in any rolling 7 days per case. Automated payment reminders (SMS, email, push) count as attempts, because POL-COLL-001 §5.2 says they do when they ask for payment. Windows shorter than 15 minutes are skipped. Demo: SAV-6847 has 3 attempts in the last 7 days, so Mon 28 and Tue 29 Sep are blocked, Wed 30 Sep is the National Day for Truth and Reconciliation, and the next allowed contact is Thu 1 Oct.
 
 **Where does the holiday calendar come from?**
-`config/statutory_holidays.csv`: 30 September is named in POL-COLL-001 §5.1, and the other dates follow the national holidays flagged in `contact_history.stat_holiday_flag` for 2025-2026. Limitation: provincial-only holidays are not modelled.
+Computed by rule for any year (`app/holidays.py`): fixed dates, nth-weekday holidays and Easter-based Good Friday, including 30 September, which POL-COLL-001 §5.1 names. The rules reproduce all 105 holiday dates flagged in `contact_history.stat_holiday_flag` from 2016 to 2026 (one more flagged record, at 00:50 local time on 4 August 2026, is the Civic Holiday seen from another time zone). `config/statutory_holidays.csv` can add dates such as a provincial holiday. Limitation: provincial-only holidays are not included by default.
 
 **How do you decide which hardship programmes a customer is eligible for?**
 We don't decide; we pre-check and the named approver confirms. Each programme version effective on the snapshot date (`hardship_programs.csv`, v2026.1) is checked against the case product, days past due, months on book, uses in the last 12 months, insolvency, broken plans in the last 90 days, and the hardship level the programme needs (recorded vs AI-possible). Programmes needing income evidence list it as a missing input (POL-COLL-004 §4.3). HP-DMP requires a credit counsellor; settlement is shown only from 121 days past due ("late stage", HPT-2026). The FAQ says the reduced-payment programme lasts 6 months, but the policy and programme table say 3; we follow the policy.
@@ -35,6 +38,42 @@ Semi-monthly pay is the 15th and the last day of the month, and monthly pay is m
 
 **What about cases with an agency or in legal action?**
 3,262 open cases are `placed_agency` or `legal`. No policy in the release covers them, so the plan shows a caution step citing the source status instead of inventing a rule.
+
+## Live Call Mode
+
+**What does Call Mode add over the brief?**
+The brief is preparation; Call Mode is the call itself. The agent ticks who answered, reads the recording notice and verifies identity (debt details stay hidden until both are done), then ticks what the customer says: hardship, cannot afford, dispute, complaint, representative, vulnerability, or a stop-contact request. After every click the server recomputes the ordered plan, the checks and the script from the same rules as the brief (`app/call_session.py`, `/api/call/session`).
+
+**Where do the hardship payment numbers come from?**
+From the account and the programme terms in `hardship_programs` (version effective on the snapshot). JEV-1240, auto loan, regular payment $631.72: HP-LOAN-RED3 pays 50% for 3 months, so $315.86, with $947.58 moved to the end; HP-LOAN-EXT re-amortises over up to 12 more months, $578.71 (needs a hardship specialist); HP-LOAN-SKIP is shown as not eligible because the case is 86 days past due and the limit is 60.
+
+**How does it check a promise or a callback?**
+A promise must be within 21 days (PRC-COLL-010 §3.1); a later date blocks the wrap-up and says the last allowed day. A callback must fall inside the customer's local hours, not on a holiday, not on a Sunday unless they allow Sunday contact, and within the 7-day attempt cap, counting this call. If the customer states income and expenses, an affordability bar shows the promise as a share of what is left (for example $315.86 is 63% of $500 disposable, a warning, not a block). Stated figures are labelled unverified.
+
+**What happens when the agent clicks "Extract" on typed notes?**
+Each proposed outcome comes with the exact sentence it came from, and nothing is applied until the agent accepts it. Without Gemini, local rules use the same hardship cues as the detector plus explicit amounts, dates and phrases (dispute, complaint, lawyer, "stop calling"). With Gemini on, the model must quote the note verbatim; a quote that is not in the note, or an amount that is not in its quote, is dropped. If Gemini fails, the rules run instead; the call never breaks.
+
+**What happens after the call?**
+The wrap-up note, outcome codes (for example RPC, HARDSHIP_STATED, PROGRAMME_AGREED, PTP) and follow-ups (such as one reminder before the promise date, which counts toward the cap) are generated. Submit stores it as a pending item in Supervisor review with an audit event. Submit is refused while a blocking check is open.
+
+**Can an agent call a customer they should not?**
+No. HAC-4447 has a consumer proposal: the call page opens as "Contact blocked", the controls are disabled and only the restriction is shown (POL-COLL-001 §7.3). Agents can only open their own customers; analysts cannot use Call Mode.
+
+## Gemini and AI guardrails
+
+**Is Gemini required? What can it do?**
+No. It is off unless a key is configured locally, and every feature works without it. It can only (1) choose one of our reviewed question plans, (2) select verbatim evidence, and (3) propose call outcomes with a verbatim quote. It never writes SQL, never decides a step, and nothing it proposes is saved without the agent accepting it and the supervisor reviewing it. A live Gemini call has not yet been verified on our machine (tested with mocked HTTP only).
+
+## New data and scale
+
+**Does this only work on the dataset you were given?**
+No hard-coded dates or limits remain in the decisions. The snapshot date is read from `max(collections_cases.extract_ts)` and the planning instant from the latest recorded contact (`app/snapshot.py`); holidays are computed for any year; the weekly cap is read per case (`contact_cap_7d`); policy citations use the versions listed in `reference_documents`; programme rules use the version effective on the snapshot. `tests/test_unseen_release.py` builds a March 2027 release with newer policy versions (POL-COLL-004 v5.0), a cap of 2 and a new programme, and the plan cites the new versions, blocks two days for the cap, skips Good Friday 2027 and the queue follows. The build needs the same table layout (the C360 contract in `config/c360-contract.yaml`); a different schema needs a mapping, which we do not claim to do automatically.
+
+**Will it scale to a real bank?**
+The nightly batch (`scripts/batch_plans.py`) builds the full plan for every open case: 93,320 customers in 21.1 seconds on 8 local processes (about 4,430 per second, 0 errors). It loads data in a fixed number of set-based queries per chunk of 2,000 customers instead of per customer, which made it about 46 times faster, and it writes to a separate file so the live app is never locked. On the demo laptop a Call Mode update takes about 0.17 s and a full brief about 0.23 s. Production would swap DuckDB files for the bank's warehouse; the rules are plain Python and SQL.
+
+**What is the money at stake?**
+On the Overview, each with its SQL: $69.8M total exposure on 4,100 cases at 150-180 days past due (source expected-loss estimate $28.8M, overdue $8.1M); $18.0M overdue with 18,758 customers in hardship and no plan; $338.6K recorded cost of 348,411 outbound contacts in the last 30 days. These are source amounts, not savings we claim.
 
 ## Work queue
 
@@ -90,7 +129,7 @@ No. Agent scope is enforced in the API on every customer, brief, recording and q
 We found and fixed a race during browser testing: concurrent requests could fail while DuckDB external file access was being locked down. A test fires 24 concurrent requests, and it failed 3 out of 3 runs without the fix.
 
 **Was the UI actually tested in a browser?**
-Yes. `scripts/e2e_finals.mjs` drives Chromium through the Overview checks, the queue, three demo briefs, reviews and the agent role at desktop and phone widths: 27 of 27 checks passed, with no console errors.
+Yes. `scripts/e2e_finals.mjs` drives Chromium through the Overview checks, the queue, three demo briefs, Call Mode for JEV-1240 through to submission, the blocked HAC-4447 call, the contact calendar, Ctrl+K, reviews and the agent role at desktop and phone widths: 49 of 49 checks passed, with no console errors.
 
 ## Question box: what it will not answer (yet)
 
@@ -99,7 +138,9 @@ It fails safe: when a question has no reviewed route, it asks for clarification 
 ## Limits we state up front
 
 - Synthetic, templated data; no production or business-uplift claim.
-- Holidays: national list only. Payday: estimated for 52% of open cases.
+- Holidays: national rules only. Payday: estimated for 52% of open cases.
+- Call Mode income and expenses are as stated by the customer, not verified.
+- Gemini live path not yet verified; everything shown works without it.
 - Programme results are suggestions; the approver decides.
 - Identity matching precision is not measured; 64,145 links are held for review.
 - No customer contact is ever sent by the app.

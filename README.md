@@ -8,13 +8,19 @@ Collections Copilot is a web application built for the CIBC hackathon. It helps 
 
 The prelim submission is tagged `prelim-submission`. For the finals we added:
 
+- **Live Call Mode** (`/call/<customer>`). The agent follows the call on one screen: who answered, the recording notice and identity check, then what the customer says (hardship, cannot afford, dispute, complaint, representative, stop-contact request). The plan, checks and script recompute after every click. Hardship options show priced monthly payments from the programme terms (JEV-1240: HP-LOAN-RED3 takes $631.72 to $315.86 for 3 months). Promises and callbacks are checked against the 21-day limit, local hours, Sundays, holidays and the contact cap, and an affordability bar compares the promise with the income the customer states. Typed notes can be turned into proposed outcomes, each with the exact sentence it came from. The wrap-up note is written for the agent and goes to supervisor review; restricted customers (HAC-4447) cannot be called ([app/call_session.py](app/call_session.py)).
 - **Step-by-step agent brief.** Every brief now opens with *What to do, in order*: restrictions → representative → disputes and complaints → vulnerable-customer approach → hardship programmes → open promise → when contact is legal → payment ask timed to payday. Each step cites its policy section and source record, and the steps are rules over source data; the model can only flag possible hardship for a person to confirm ([app/action_plan.py](app/action_plan.py)).
+- **Works on a new extract without code changes.** The snapshot date comes from `max(collections_cases.extract_ts)` ([app/snapshot.py](app/snapshot.py)); statutory holidays are computed by rule for any year and reproduce all 105 dates flagged in `contact_history` from 2016 to 2026 ([app/holidays.py](app/holidays.py)); the weekly contact cap is read per case (`contact_cap_7d`); policy citations use the versions in `reference_documents`. [tests/test_unseen_release.py](tests/test_unseen_release.py) builds a synthetic March 2027 release with newer policy versions and a cap of 2, and the plan, holidays, citations and queue follow it.
+- **Every open case, planned in 21 seconds.** [scripts/batch_plans.py](scripts/batch_plans.py) builds the full action plan for all 93,320 customers with an open case in 21.1 s (8 worker processes, about 4,430 plans per second, 0 errors), using set-based loading instead of per-customer queries. Output: `data/plans.duckdb` and `data/plans-report.json`.
+- **What's at stake.** The Overview shows $69.8M exposure on cases close to write-off, $18.0M overdue with 18,758 customers in hardship and no plan, and $338.6K spent on 348,411 outbound contacts in the last 30 days, each with its SQL, plus the first step the batch chose for every open case ([app/portfolio_checks.py](app/portfolio_checks.py)).
+- **Customer history and contact calendar.** The customer page opens on a 14-day calendar of when contact is allowed (with the reason for each blocked day) and one timeline of contacts, promises, notes, hardship offers and cases across the source systems, with contacts made outside the rules marked ([app/customer360.py](app/customer360.py)).
+- **Ctrl+K search.** Jump to any page, customer, brief or call from anywhere.
 - **Work queue.** Each agent's open cases in a fixed, explainable urgency order, with the reason for each position and the next time policy allows contact ([app/work_queue.py](app/work_queue.py)).
 - **Problems across all customers.** Overview tiles for policy problems across the portfolio, each with its definition and the exact SQL ([app/portfolio_checks.py](app/portfolio_checks.py)).
 - **Question box for live questions.** Monthly trends, rankings, counts and hardship-programme lookups; a one-line plain-English summary first; unsupported questions get a clarification with supported rephrasings instead of a substituted number.
-- **Hardship detector v2.** Wider English and French cues plus illness, separation and disaster cues from POL-COLL-004 §4.2, measured with customer-grouped cross-validation ([evaluation](docs/hardship-detector-evaluation.md)).
-- **Verification.** A rendered-browser walkthrough at desktop and phone width ([scripts/e2e_finals.mjs](scripts/e2e_finals.mjs)) and pinned demo customers ([tests/test_demo_customers.py](tests/test_demo_customers.py)). It found and fixed a concurrency bug in the database lockdown.
-- **Presentation material.** The [architecture diagram](docs/architecture-build.pdf), a 10-slide finals deck generated from measured results ([scripts/generate_finals_deck.py](scripts/generate_finals_deck.py)), the [live demo script](docs/demo-walkthrough.md) and [judge Q&A preparation](docs/finals-judge-qa.md).
+- **Hardship detector v2.** Wider English and French cues plus illness, separation and disaster cues from POL-COLL-004 §4.2, measured with customer-grouped cross-validation; retrained, it finds 36 of 38 held-out hardship notes with no false alarms ([evaluation](docs/hardship-detector-evaluation.md)).
+- **Verification.** A rendered-browser walkthrough at desktop and phone width, including Call Mode, the blocked customer, the calendar and the palette: 49 of 49 checks ([scripts/e2e_finals.mjs](scripts/e2e_finals.mjs)), and pinned demo customers ([tests/test_demo_customers.py](tests/test_demo_customers.py)). It found and fixed a concurrency bug in the database lockdown.
+- **Presentation material.** The [architecture diagram](docs/architecture-build.pdf), a 13-slide finals deck generated from measured results ([scripts/generate_finals_deck.py](scripts/generate_finals_deck.py)), the [live demo script](docs/demo-walkthrough.md) and [judge Q&A preparation](docs/finals-judge-qa.md).
 - **Cleanup.** Prelim planning notes and process reviews moved to [docs/archive](docs/archive/README.md).
 
 ## The problem we address
@@ -31,9 +37,10 @@ The application uses the **synthetic Maple Bank dataset**, not real customer dat
 |---|---|
 | Overview | See customer counts, open cases, overdue amounts, identity matching results, pending reviews and policy problems across all customers (each with its SQL). |
 | Work queue | An agent's open cases in urgency order, with the reason and the next allowed contact time for each. |
-| Customers | Search by name or customer ID and inspect linked accounts, cases, notes and matching evidence. |
+| Customers | Search by name or customer ID and inspect the contact calendar, the cross-system history, linked accounts, cases, notes and matching evidence. |
 | Ask Collections | Ask supported portfolio or policy questions and inspect the SQL or source documents behind each answer. |
 | Briefs | Generate an ordered, policy-cited plan of what to do, hardship programme checks, evidence, a review score and an English or French draft. |
+| Call Mode | Run a call live: record what the customer says, see the plan, priced hardship options and rule checks update, then send the wrap-up note for review. |
 | Reviews | Approve, reject or edit a pending draft with a reason. Supervisors can inspect the audit log. |
 | Data quality / Feature registry | Inspect counted data issues, feature definitions, offline/live consistency and model evaluation. |
 
@@ -349,6 +356,8 @@ These are local checks, not an organizer score. Correctness of the extra answers
 | `app/main.py` | FastAPI routes, authentication, customer access and review workflow. |
 | `app/action_plan.py` | Ordered, policy-cited next steps per customer: restrictions, representative, programmes, promise, contact window, payment ask. |
 | `app/work_queue.py`, `app/portfolio_checks.py` | Agent work-queue tiers and the portfolio-wide policy checks shown on Overview. |
+| `app/call_session.py`, `app/customer360.py` | Call Mode (outcomes, checks, programme calculator, note extraction, wrap-up) and the customer timeline and contact calendar. |
+| `app/snapshot.py`, `app/holidays.py` | Snapshot date read from the extract; statutory holidays computed for any year. |
 | `app/insights.py` | Question plans, policy retrieval, transcript evidence and refusals. |
 | `app/metric_plans.py` | Validated metric catalog and fixed SQL compiler used for local and Gemini plans. |
 | `app/runtime.py`, `app/gemini.py` | Shared API/benchmark pipeline and optional stateless provider adapter. |
@@ -358,7 +367,7 @@ These are local checks, not an organizer score. Correctness of the extra answers
 | `app/voice.py`, `app/voice_worker.py` | Verified audio, bounded local transcription and review-only cached cue evidence. |
 | `scripts/` | Dataset download, data preparation, model training, verification and benchmark export. |
 | `tests/` | Automated tests for access, question handling, review storage and features. |
-| `config/` | Customer 360 data contract and the statutory holiday calendar used for contact windows. |
+| `config/` | Customer 360 data contract and optional extra holiday dates (for example provincial or one-off closures). |
 | `docs/` | Architecture, data-quality/model reports, API contract, finals demo and Q&A; prelim material in `docs/archive/`. |
 | `submission/` | Generated benchmark answers. |
 | `data/` | Local release, databases and trained model; ignored by Git. |
@@ -398,7 +407,7 @@ These are local checks, not an organizer score. Correctness of the extra answers
 | Broader C360 summary contract | Eight summary fields plus linked accounts, cases, notes and feature views. Consent aggregates, 30/90-day counts, per-customer DQ status and reviewed hardship status are not added to the summary. |
 | Voice and orchestration extensions | Provided transcript summaries plus optional verified audio playback and local Whisper speech-to-text. Generated cues require human inspection and do not change decisions; orchestration frameworks remain outside the build. |
 
-The application still requires supervisor approval for every brief. It does not initiate customer contact or make programme eligibility decisions automatically: programme checks are suggestions for the named approver. Contact windows use a national statutory-holiday list (`config/statutory_holidays.csv`), not provincial-only holidays. Paydays are estimated from recorded pay frequency and salary credits, for about half of open cases; otherwise the plan tells the agent to ask.
+The application still requires supervisor approval for every brief. It does not initiate customer contact or make programme eligibility decisions automatically: programme checks are suggestions for the named approver. Contact windows use national statutory holidays computed by rule ([app/holidays.py](app/holidays.py)); provincial-only holidays can be added in `config/statutory_holidays.csv` but are not included. Paydays are estimated from recorded pay frequency and salary credits, for about half of open cases; otherwise the plan tells the agent to ask.
 
 Customer matching is conservative: unresolved identities are excluded from linked accounts and counted in the quality report. The pipeline currently produces **1,014,631 golden customer records**; this is not a claim that it has perfectly recovered the release's underlying one million people. Source identifiers retain leading zeros, invalid typed values remain available in raw data, and only empty CSV fields become null. Portfolio totals include source cases with unresolved customer references, while C360 views contain linked cases, so their totals can differ.
 
