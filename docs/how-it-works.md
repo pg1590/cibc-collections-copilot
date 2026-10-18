@@ -73,7 +73,7 @@ We measured it instead of assuming. `scripts/compare_llm_classifier.py` scored t
 
 ## Every page, what it shows and why
 
-There are nine screens; the agent's working path is Work queue → Agent brief → Call Mode → Supervisor review. **Ctrl+K** (or the search box in the header) jumps to any page or customer from anywhere.
+There are ten screens; the agent's working path is Work queue → Agent brief → Call Mode → Supervisor review. **Ctrl+K** (or the search box in the header) jumps to any page or customer from anywhere.
 
 | Page | Who | What it shows | Why it matters | Backend |
 | --- | --- | --- | --- | --- |
@@ -84,6 +84,7 @@ There are nine screens; the agent's working path is Work queue → Agent brief �
 | Call Mode | agent, supervisor | Live call screen: customer panel, guided script, "what the customer says" toggles, hardship calculator, promise and callback checks, notes extraction, wrap-up. | Turns the brief into a guided, compliant call; the plan recomputes as the customer answers. | `/api/call/session`, `/extract`, `/submit` |
 | Supervisor review | agent (own), supervisor | Pending briefs and call wrap-ups; approve, reject or edit with a mandatory reason; audit log. | Human in the loop: nothing the app drafts is used until a supervisor approves it. | `/api/reviews`, `/api/audit` |
 | Ask Collections | analyst, supervisor | Plain-English questions (trends, rankings, counts, policy). Each answer shows a one-line summary, the table and the SQL or policy paragraph it came from. Unsafe or unsupported questions are refused or clarified. | Managers get numbers without writing SQL, and can verify every one. | `POST /api/ask` (`app/insights.py`) |
+| Policies | all | Every reference document in the release, verbatim and split into numbered sections, with search. Every policy citation in the app (plans, call checklist, briefs, reviews, Overview definitions) links here and highlights that section. | Anyone can check the exact rule behind a step in one click. | `/api/documents` (`app/documents.py`) |
 | Data & features | analyst, supervisor | Counted data-quality issues, row counts, feature definitions, offline/live parity, model evaluation. | Shows the data was checked, not assumed clean. | `/api/quality`, `/api/features` |
 | Sign in | all | Three demo roles. Access is enforced on the backend, not just by hiding buttons. | Role-based access is a bank requirement. | `/api/auth/login` |
 

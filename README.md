@@ -42,6 +42,7 @@ The application uses the **synthetic Maple Bank dataset**, not real customer dat
 | Briefs | Generate an ordered, policy-cited plan of what to do, hardship programme checks, evidence, a review score and an English or French draft. |
 | Call Mode | Run a call live: record what the customer says, see the plan, priced hardship options and rule checks update, then send the wrap-up note for review. |
 | Reviews | Approve, reject or edit a pending draft with a reason. Supervisors can inspect the audit log. |
+| Policies | Read every reference document in the release, section by section. Every policy citation in the app opens the cited section. |
 | Data quality / Feature registry | Inspect counted data issues, feature definitions, offline/live consistency and model evaluation. |
 
 Approval records a review decision. The app does not send messages, initiate calls or change the original customer records.

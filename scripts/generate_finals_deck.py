@@ -296,7 +296,7 @@ def generate(output):
     page('Backend architecture, and why each part',
          'Customer data is only read; reviews and audit are the only writes; the LLM is optional.',
          'Source: app/main.py, app/action_plan.py, app/insights.py, app/storage.py, app/gemini.py; timings measured on the demo laptop at export')
-    box(48, 316, 160, 104, 'Next.js web app', 'Nine pages and Ctrl+K. No business logic or data access in the browser.')
+    box(48, 316, 160, 104, 'Next.js web app', 'Ten pages and Ctrl+K. Every policy citation opens its section. No business logic in the browser.')
     box(240, 316, 190, 104, 'FastAPI backend', 'Typed JSON endpoints. Role and case access checked on every request, not by hiding buttons.')
     box(240, 176, 190, 112, 'Gemini 3.5 Flash-Lite', 'Optional. Fills a fixed JSON schema; every reply is validated; any failure falls back to local.', dashed=True)
     box(462, 352, 220, 68, 'Rules engine', 'action_plan, call_session, work_queue: each policy step is code.', accent=True, body_size=10)

@@ -22,8 +22,10 @@ async function login(page, role) {
   // The sign-in page must be hydrated before submitting, or the click is a no-op;
   // wait for the network to settle and retry a few times on a slow first compile.
   for (let attempt = 0; attempt < 4; attempt++) {
-    await page.goto(`${BASE}/login`);
+    await page.goto(`${BASE}/login`, { timeout: 120000 });
     await page.waitForLoadState("networkidle").catch(() => {});
+    // A cold dev server can take well over 30 s to compile the page on first load.
+    if (!(await page.waitForSelector("#username", { timeout: 120000 }).then(() => true).catch(() => false))) continue;
     await page.fill("#username", role);
     await page.fill("#password", `${role}-demo`);
     await page.click('button[type="submit"]');

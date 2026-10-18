@@ -65,10 +65,13 @@ Speak at a calm pace. Words in **bold** in the "Do" column are buttons or screen
 | 11:30 | **Go to wrap-up** | "The call note is written for the agent, with the policy cited. The outcome codes are set, and one reminder is scheduled before the 15th; it counts toward the weekly cap." |
 | 11:55 | **Submit for supervisor review** | "It goes to a supervisor. The app never contacts the customer itself." |
 | 12:05 | **Ctrl+K**, `HAC-4447`, open **Call** | "And when an agent must not call: this customer filed a consumer proposal. The call page is blocked, the controls are off, and contact goes through the trustee." |
-| 12:30 | Open **Reviews**, open the call note, **Approve** with a reason such as "Programme within agent authority" | "The supervisor sees the note and the outcome codes, and approves, edits or rejects with a reason. Every action goes into the audit log." |
-| 13:10 | Alt+Tab back to the slides, slide 10 | "Ved will take us to the close." |
+| 12:25 | Click the citation **POL-COLL-001 v3.0 §7.3** | "Every step cites its policy, and every citation opens the exact section: here, all collection contact stops once a consumer proposal is filed." |
+| 12:40 | Open **Reviews**, open the call note, **Approve** with a reason such as "Programme within agent authority" | "The supervisor sees the note and the outcome codes, and approves, edits or rejects with a reason. Every action goes into the audit log." |
+| 13:15 | Alt+Tab back to the slides, slide 10 | "Ved will take us to the close." |
 
 If time is short, cut in this order: the affordability step (10:30), then the Extract step (11:00). Never cut the blocked customer: it is the compliance proof.
+
+Don't click policy citations during the JEV-1240 call before **Submit for supervisor review**: the app asks "Leave this call?" because the recorded outcomes would be lost. If that prompt appears, choose **Cancel** to stay. Ctrl+K, the menu and the citation on the blocked HAC-4447 call are not affected.
 
 ## Part 4: Close (Ved, 1:00)
 
@@ -77,7 +80,7 @@ Ved reads from this page. No live clicking.
 | Time | Do | Say |
 |---|---|---|
 | 13:30 | Slide 10 | "Managers can also ask questions in plain English. Every answer shows its SQL. If a question can't be answered correctly, it asks for clarification instead of guessing, and it refuses requests like exporting personal data. It matched all 12 of the organisers' reference answers." |
-| 13:55 | Slide 11 | "To sum up: rules decide, AI suggests, and people approve. 553 tests pass, and we checked every screen in a real browser. We state our limits openly: the data is synthetic, and the app never contacts a customer; it only prepares and records." |
+| 13:55 | Slide 11 | "To sum up: rules decide, AI suggests, and people approve. 559 tests pass, and we checked every screen in a real browser. We state our limits openly: the data is synthetic, and the app never contacts a customer; it only prepares and records." |
 | 14:20 | Stay on slide 11 | "Thank you. We're happy to take your questions." |
 
 ## Questions: who answers what
