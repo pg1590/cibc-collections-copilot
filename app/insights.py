@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import math
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -132,6 +133,46 @@ def unhandled_comparison(q):
     if not dpd_threshold(q) and re.search(r'delinquen|\bshare\b|\bcard accounts?\b',q):
         covered+=[(a,b) for a,b,_ in _dpd_matches(q)]
     return any(not any(a<=m.start()<b for a,b in covered) for m in COMPARISON.finditer(q))
+
+
+# Live questions are typed in a hurry. Key collections words with a typo are read as the word they
+# are nearly identical to, and the answer says so. Inflections and real lookalikes are never changed.
+TYPO_KEYWORDS=('customer','customers','overdue','province','provinces','hardship','amount','dollars','balance','balances','collections',
+               'delinquency','average','outstanding','payment','payments','promise','promises','contacts','attempts','disputes','insolvency',
+               'september','august','october','resolved','broken','queue','bucket','product','channel')
+TYPO_PROTECTED=frozenset(('customs custom costume costumes insolvent provide provided provides average averages promised promising payable dispute disputed '
+                          'broke broker brokers produce produced product products channels buckets queues collector collectors collect collected collecting '
+                          'collection contract contracts contracted').split())
+
+
+def _edit_distance(a,b):
+    """Optimal string alignment distance (adjacent transpositions count once)."""
+    d=[[i+j if i*j==0 else 0 for j in range(len(b)+1)] for i in range(len(a)+1)]
+    for i in range(1,len(a)+1):
+        for j in range(1,len(b)+1):
+            d[i][j]=min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]!=b[j-1]))
+            if i>1 and j>1 and a[i-1]==b[j-2] and a[i-2]==b[j-1]:d[i][j]=min(d[i][j],d[i-2][j-2]+1)
+    return d[-1][-1]
+
+
+def correct_typos(text):
+    """Return the text with near-miss key words corrected, and the (typed, read as) pairs."""
+    fixes=[]
+    def fix(match):
+        word=match.group(0);low=word.lower()
+        if len(low)<5 or low in TYPO_KEYWORDS or low in TYPO_PROTECTED:return word
+        close=[]
+        for key in TYPO_KEYWORDS:
+            if key[0]!=low[0] or abs(len(key)-len(low))>2:continue
+            stem=len(os.path.commonprefix([low,key]))
+            if stem>=len(key)-1 or stem>=len(low)-1:continue  # an inflection such as contacted, amounts, promised
+            distance=_edit_distance(low,key)
+            if distance<=(2 if len(key)>=8 else 1):close.append((distance,key))
+        close.sort()
+        if not close or (len(close)>1 and close[0][0]==close[1][0] and close[0][1]!=close[1][1]):return word
+        fixes.append((word,close[0][1]))
+        return close[0][1]
+    return re.sub(r'[A-Za-z]+',fix,text),fixes
 
 
 def tokens(text):return re.findall(r'[a-z0-9]+',text.lower())
@@ -736,7 +777,7 @@ class InsightEngine:
         return None
 
     def answer(self,question,role='analyst'):
-        start=time.perf_counter();q=question.strip();lower=q.lower()
+        start=time.perf_counter();q,typos=correct_typos(question.strip());lower=q.lower()
         result={'answer':'','sql_or_sources':'','refused':False,'reason':None,'rows':[],'sources':[],'execution_ms':0,'snapshot_date':SNAPSHOT}
         reason=self._refusal(lower)
         if role not in ['analyst','supervisor']:reason='Portfolio questions require an analyst or supervisor. Use assigned-customer briefs.'
@@ -780,6 +821,9 @@ class InsightEngine:
         if result['reason']=='clarification_required' and not result['refused']:
             result['suggestions']=self._suggestions(lower)
         result['summary']=self._summary(result,lower)
+        if typos:
+            result['corrections']=[{'typed':typed,'read_as':read} for typed,read in typos]
+            result['summary']+=' (Read '+', '.join(f'“{typed}” as “{read}”' for typed,read in typos)+'.)'
         result['execution_ms']=round((time.perf_counter()-start)*1000,2)
         return result
 
