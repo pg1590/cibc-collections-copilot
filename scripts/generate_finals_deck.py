@@ -38,6 +38,7 @@ from app.settings import AS_OF, DB, QUALITY, ROOT, SNAPSHOT
 NAVY, TEAL, MUTED, PAPER, RED, CORAL, LINE = '#18343C', '#087F80', '#52676B', '#F8F9F6', '#A34335', '#D9614A', '#CCDCD8'
 W, H = 960, 540
 SLIDES = 16
+BACKUP_FROM = 12  # slides 12-16 repeat what the live demo shows; presented only if the app fails
 SHOTS = ROOT / 'data/finals-shots'
 DOCS = ROOT / 'docs'
 LLM_COMPARISON = Path(os.environ.get('LLM_COMPARISON', ROOT / 'data/llm-comparison.json'))
@@ -170,6 +171,8 @@ def generate(output):
             text(48, 452, 864, escape(subtitle), 16, MUTED, maximum=44)
         c.setFont('DeckSans', 10); c.setFillColor(HexColor(MUTED))
         c.drawRightString(912, 16, f'{number} / {SLIDES}')
+        if number > BACKUP_FROM - 1:
+            c.drawRightString(912, 520, 'Backup slide: shown live in the demo')
         if source:
             c.drawString(48, 16, source)
 
@@ -363,86 +366,7 @@ def generate(output):
          'It sits behind one module. It proposes plans, verbatim evidence and call outcomes; the app verifies each one.', 11, MUTED, maximum=96)
     c.showPage()
 
-    # 7. The brief
-    page('The brief: what to do, in order',
-         'Rules over source records decide every step. The model can only flag possible hardship for a human to confirm.')
-    flow = [('1', "Don't contact", 'restriction recorded', 'stop'), ('2', 'Representative only', 'all contact through them', 'do'),
-            ('3', 'Dispute / complaint', 'pause, escalate', 'careful'), ('4', 'Vulnerable', 'script, certified agent', 'careful'),
-            ('5', 'Hardship first', 'eligible programmes', 'do'), ('6', 'Promise due', 'reminder only', 'do'),
-            ('7', 'Legal window', 'hours, holiday, 3 in 7 days', 'do'), ('8', 'Ask for payment', 'timed to payday', 'do')]
-    colors = {'stop': RED, 'do': TEAL, 'careful': CORAL}
-    for i, (n, label, body, kind) in enumerate(flow):
-        col, row = i % 4, i // 4
-        x, y = 48 + col * 222, 268 - row * 140
-        c.setFillColor(HexColor('#FFFFFF')); c.setStrokeColor(HexColor(colors[kind])); c.setLineWidth(1.6)
-        c.roundRect(x, y, 200, 110, 8, fill=1, stroke=1)
-        chip(x + 12, y + 84, {'stop': 'STOP', 'do': 'DO', 'careful': 'CAREFUL'}[kind], colors[kind])
-        text(x + 12, y + 76, 176, f'<b>{n}. {escape(label)}</b>', 13, maximum=36)
-        text(x + 12, y + 38, 176, escape(body), 12, MUTED, maximum=32)
-        if col < 3:
-            c.setStrokeColor(HexColor(LINE)); c.setLineWidth(2); c.line(x + 202, y + 55, x + 220, y + 55)
-    text(48, 102, 864, 'Each step shows the policy section and the source record it relies on. Steps 1-4 can end or change the call before any money is discussed. '
-         'A supervisor reviews every brief; the app never contacts a customer.', 14, maximum=60)
-    c.showPage()
-
-    # 8. Example: legal window
-    sav = f['sav']['contact_window']
-    page('Example: when is contact actually allowed?', 'Customer SAV-6847, a real record in the synthetic release.',
-         'Source: contact_history, customer consent and hours, holidays computed by rule (app/holidays.py)')
-    reasons = ''.join(f"<br/>{escape(action_plan._day(__import__('datetime').date.fromisoformat(s['date'])))}: {escape(s['reason'])}" for s in sav['skipped'])
-    text(48, 400, 330, '<b>Not Monday or Tuesday</b><br/>3 attempts already used in the last 7 days. Payment reminders count (POL-COLL-001 §5.2).', 15, maximum=110)
-    text(48, 282, 330, '<b>Not Wednesday</b><br/>30 Sep is a statutory holiday (§5.1).', 15, maximum=70)
-    text(48, 200, 330, f"<b>Thursday {sav['from_local']}-{sav['until_local']} their time</b><br/>in {escape(sav['time_zone'])}, with consent checked per channel.", 15, TEAL, maximum=80)
-    text(48, 100, 330, 'Vulnerable customer: the script and "never pressure" rule are repeated at the payment step.', 12.5, MUTED, maximum=48)
-    shot('plan-SAV-6847.png', 400, 40, 512, 380)
-    c.showPage()
-
-    # 9. Example: hardship first
-    eligible = [p for p in f['jev']['programmes'] if p['status'] == 'likely_eligible']
-    page('Example: hardship options before payment', 'Customer JEV-1240: hardship recorded on a loan case, no plan yet.',
-         'Source: hardship_programs.csv (v2026.1), HPT-2026, POL-COLL-004 §4.2-4.3')
-    text(48, 400, 330, '<b>Programme rules checked</b><br/>effective version, product, days past due, months on book, uses in 12 months, insolvency, broken plans in 90 days.', 14, maximum=120)
-    text(48, 274, 330, '<b>Likely eligible</b><br/>' + '<br/>'.join(f"{escape(p['name'])} (approver: {escape(p['approver'].replace('_', ' '))})" for p in eligible), 14, TEAL, maximum=100)
-    text(48, 160, 330, 'Missing inputs are named (income evidence for a term extension). The approver decides; the agent asks for payment only after the options are discussed.', 12.5, MUTED, maximum=80)
-    shot('plan-JEV-1240.png', 400, 40, 512, 380)
-    c.showPage()
-
-    # 10. Live Call Mode
-    call = f['call']
-    red3 = next(o for o in call['calculator']['options'] if o['program_id'] == 'HP-LOAN-RED3')
-    ext = next(o for o in call['calculator']['options'] if o['program_id'] == 'HP-LOAN-EXT')
-    aff = call['affordability']
-    page('Live Call Mode: the plan follows the conversation', 'JEV-1240 on the phone. Every click recomputes the plan, the checks and the script with the same rules as the brief.',
-         'Source: app/call_session.py; programme terms from hardship_programs v2026.1; PRC-COLL-010 §3.1')
-    top = 400
-    for label, body in [
-            ('Debt details only after the basics', 'Who answered, recording notice, identity. Third parties and voicemail get no debt details.'),
-            ('Hardship options, priced', f"Reduced payment: ${red3['payment_now']:,.2f} to ${red3['payment_during']:,.2f} for {red3['months']} months (agent approves). "
-                                         f"Term extension: ${ext['payment_during']:,.2f} (specialist)."),
-            ('Promises and callbacks checked', f"Within 21 days, legal hours, holidays, the weekly cap. Affordability: the promise is {aff['promise_share_of_disposable']:.0%} of money left each month."),
-            ('Notes to outcomes, quoted', 'Typed notes become proposals, each with its exact sentence; nothing applies until the agent accepts.'),
-            ('Wrap-up to review', 'Note, outcome codes ' + ', '.join(call['wrap_up']['outcome_codes']) + ' and follow-ups go to a supervisor.')]:
-        top = text(48, top, 350, f'<b>{escape(label)}</b>', 13.5, maximum=22)
-        top = text(48, top - 2, 350, escape(body), 11, MUTED, maximum=46) - 10
-    text(48, 66, 350, 'HAC-4447 (consumer proposal): the call page is blocked and its controls are off.', 11.5, RED, maximum=34)
-    shot('call-JEV-1240.png', 420, 40, 492, 368, left_fraction=0.19)
-    c.showPage()
-
-    # 11. Work queue
-    q = f['queue']
-    page('Work queue: fixed rules, a reason on every row', f"Agent {q['agent_id']}: {q['total']} open cases, ordered by tier, then promise date or days past due, then the next legal contact time.",
-         'Source: app/work_queue.py; vulnerability and protected attributes never change the order')
-    top = 396
-    for t in q['tiers']:
-        if not t['count']:
-            continue
-        text(48, top, 260, f"<b>{escape(t['label'])}</b>  <font color='{TEAL}'>{t['count']}</font>", 14, maximum=22)
-        top = text(48, top - 20, 260, escape(t['rule']), 10.5, MUTED, maximum=44) - 12
-    text(48, 74, 260, 'No model score decides order. Each row shows the next allowed contact.', 12.5, maximum=36)
-    shot('queue-viewport.png', 330, 40, 582, 350, top_fraction=0.02)
-    c.showPage()
-
-    # 12. Scale and what is at stake
+    # 7. Scale and what is at stake
     pl, val = f['plans'], f['value']
     page(f"Every open case planned nightly: {pl['customers']:,} in {pl['seconds']:.0f} s",
          f"scripts/batch_plans.py: {pl['workers']} worker processes, about {pl['plans_per_second']:,.0f} plans per second, {pl['errors']} errors. Set-based loading, a separate output file, so serving is never locked.",
@@ -470,7 +394,7 @@ def generate(output):
         text(560, 350 - i * 104, 352, f'{escape(label)} · {escape(extra)}', 12, MUTED, maximum=36)
     c.showPage()
 
-    # 13. New data without code changes
+    # 8. New data without code changes
     page('Built for the next data release, not just this one', 'Nothing in the decisions is hard-coded to this extract. A test builds a March 2027 release and the plan follows it.',
          'Source: app/snapshot.py, app/holidays.py, tests/test_unseen_release.py')
     rows = [('Snapshot date', 'read from max(collections_cases.extract_ts)', f'{SNAPSHOT}, planning at {AS_OF:%H:%M} UTC', '24 Mar 2027'),
@@ -491,28 +415,7 @@ def generate(output):
          'The rules are plain Python and SQL, so a bank can review and version them.', 12.5, MUTED, maximum=40)
     c.showPage()
 
-    # 14. Live questions
-    dev_ok, dev_n = f['dev']
-    refusals = sum(r['refused'] == 'true' for r in f['benchmark'])
-    page('Ask what the data can answer, nothing else',
-         'Questions compile into reviewed SQL with bound parameters. Model-written SQL is never executed.')
-    top = 410
-    for label, body in [
-            ('One-line answer first', 'A plain-English summary computed from the result rows, then the table and its SQL.'),
-            ('Trends, rankings, counts, programmes', 'Monthly trends, "which province is highest", how many customers or cases, programmes in force.'),
-            ('Clarify instead of guessing', 'Unsupported questions such as "per agent" get supported rephrasings, never a substituted number.'),
-            ('Refuse what is not allowed', 'Protected-attribute decisions, bulk personal data and unrelated requests are refused.')]:
-        top = text(48, top, 380, f'<b>{escape(label)}</b>', 14, maximum=22)
-        top = text(48, top - 3, 380, escape(body), 11.5, MUTED, maximum=34) - 14
-    for i, (value, label) in enumerate([(f'{dev_ok}/{dev_n}', 'organiser reference answers matched'),
-                                        (f"{len(f['benchmark'])}", f'benchmark answers, same engine ({refusals} refusals)'),
-                                        (f"{f['tests']:,}", 'automated tests passing')]):
-        text(48 + i * 132, 112, 124, value, 22, TEAL, True, maximum=30)
-        text(48 + i * 132, 82, 124, escape(label), 9.5, MUTED, maximum=40)
-    shot('ask-ranking.png', 450, 40, 462, 380, top_fraction=0.2)
-    c.showPage()
-
-    # 15. Hardship detector
+    # 9. Hardship detector
     v1, v2 = f['hardship']['v1_current'], f['hardship']['c360-financial-v2']
     page('Hardship detector: measured honestly', 'Customer-grouped 5-fold cross-validation, 5 seeds, 500 labelled notes; plus the original untouched held-out split.',
          'Source: scripts/evaluate_hardship_cv.py, docs/hardship-detector-evaluation.md')
@@ -535,7 +438,28 @@ def generate(output):
          'Vulnerability tags and protected grounds are excluded from the model inputs.', 13, RED, maximum=60)
     c.showPage()
 
-    # 16. Rules decide, AI suggests, people approve
+    # 10. Live questions
+    dev_ok, dev_n = f['dev']
+    refusals = sum(r['refused'] == 'true' for r in f['benchmark'])
+    page('Ask what the data can answer, nothing else',
+         'Questions compile into reviewed SQL with bound parameters. Model-written SQL is never executed.')
+    top = 410
+    for label, body in [
+            ('One-line answer first', 'A plain-English summary computed from the result rows, then the table and its SQL.'),
+            ('Trends, rankings, counts, programmes', 'Monthly trends, "which province is highest", how many customers or cases, programmes in force.'),
+            ('Clarify instead of guessing', 'Unsupported questions such as "per agent" get supported rephrasings, never a substituted number.'),
+            ('Refuse what is not allowed', 'Protected-attribute decisions, bulk personal data and unrelated requests are refused.')]:
+        top = text(48, top, 380, f'<b>{escape(label)}</b>', 14, maximum=22)
+        top = text(48, top - 3, 380, escape(body), 11.5, MUTED, maximum=34) - 14
+    for i, (value, label) in enumerate([(f'{dev_ok}/{dev_n}', 'organiser reference answers matched'),
+                                        (f"{len(f['benchmark'])}", f'benchmark answers, same engine ({refusals} refusals)'),
+                                        (f"{f['tests']:,}", 'automated tests passing')]):
+        text(48 + i * 132, 112, 124, value, 22, TEAL, True, maximum=30)
+        text(48 + i * 132, 82, 124, escape(label), 9.5, MUTED, maximum=40)
+    shot('ask-ranking.png', 450, 40, 462, 380, top_fraction=0.2)
+    c.showPage()
+
+    # 11. Rules decide, AI suggests, people approve
     page('Rules decide, AI suggests, people approve', 'Where each kind of judgement lives in the product, and the limits we state before anyone asks.',
          'Source: app/action_plan.py, app/features.py, app/gemini.py, app/storage.py')
     for i, (tag, color, title, body) in enumerate([
@@ -555,7 +479,89 @@ def generate(output):
     text(670, 244, 242, 'Synthetic, templated data: no business-uplift claim. National statutory holidays only. Payday estimated for about half of cases (52%). '
          'Gemini verified live with the lite model only. Stated income unverified; identity precision unmeasured.', 11.5, MUTED, maximum=150)
     text(48, 112, 600, 'The app never sends a message, places a call or changes a source record. Approval only records a decision.', 13, maximum=40)
-    c.showPage(); c.save()
+    c.showPage()
+
+    # Backup slides 12-16: the live demo shows these screens; present them only if the app fails.
+    # 12. Backup: The brief
+    page('The brief: what to do, in order',
+         'Rules over source records decide every step. The model can only flag possible hardship for a human to confirm.')
+    flow = [('1', "Don't contact", 'restriction recorded', 'stop'), ('2', 'Representative only', 'all contact through them', 'do'),
+            ('3', 'Dispute / complaint', 'pause, escalate', 'careful'), ('4', 'Vulnerable', 'script, certified agent', 'careful'),
+            ('5', 'Hardship first', 'eligible programmes', 'do'), ('6', 'Promise due', 'reminder only', 'do'),
+            ('7', 'Legal window', 'hours, holiday, 3 in 7 days', 'do'), ('8', 'Ask for payment', 'timed to payday', 'do')]
+    colors = {'stop': RED, 'do': TEAL, 'careful': CORAL}
+    for i, (n, label, body, kind) in enumerate(flow):
+        col, row = i % 4, i // 4
+        x, y = 48 + col * 222, 268 - row * 140
+        c.setFillColor(HexColor('#FFFFFF')); c.setStrokeColor(HexColor(colors[kind])); c.setLineWidth(1.6)
+        c.roundRect(x, y, 200, 110, 8, fill=1, stroke=1)
+        chip(x + 12, y + 84, {'stop': 'STOP', 'do': 'DO', 'careful': 'CAREFUL'}[kind], colors[kind])
+        text(x + 12, y + 76, 176, f'<b>{n}. {escape(label)}</b>', 13, maximum=36)
+        text(x + 12, y + 38, 176, escape(body), 12, MUTED, maximum=32)
+        if col < 3:
+            c.setStrokeColor(HexColor(LINE)); c.setLineWidth(2); c.line(x + 202, y + 55, x + 220, y + 55)
+    text(48, 102, 864, 'Each step shows the policy section and the source record it relies on. Steps 1-4 can end or change the call before any money is discussed. '
+         'A supervisor reviews every brief; the app never contacts a customer.', 14, maximum=60)
+    c.showPage()
+
+    # 13. Backup: Example: legal window
+    sav = f['sav']['contact_window']
+    page('Example: when is contact actually allowed?', 'Customer SAV-6847, a real record in the synthetic release.',
+         'Source: contact_history, customer consent and hours, holidays computed by rule (app/holidays.py)')
+    reasons = ''.join(f"<br/>{escape(action_plan._day(__import__('datetime').date.fromisoformat(s['date'])))}: {escape(s['reason'])}" for s in sav['skipped'])
+    text(48, 400, 330, '<b>Not Monday or Tuesday</b><br/>3 attempts already used in the last 7 days. Payment reminders count (POL-COLL-001 §5.2).', 15, maximum=110)
+    text(48, 282, 330, '<b>Not Wednesday</b><br/>30 Sep is a statutory holiday (§5.1).', 15, maximum=70)
+    text(48, 200, 330, f"<b>Thursday {sav['from_local']}-{sav['until_local']} their time</b><br/>in {escape(sav['time_zone'])}, with consent checked per channel.", 15, TEAL, maximum=80)
+    text(48, 100, 330, 'Vulnerable customer: the script and "never pressure" rule are repeated at the payment step.', 12.5, MUTED, maximum=48)
+    shot('plan-SAV-6847.png', 400, 40, 512, 380)
+    c.showPage()
+
+    # 14. Backup: Example: hardship first
+    eligible = [p for p in f['jev']['programmes'] if p['status'] == 'likely_eligible']
+    page('Example: hardship options before payment', 'Customer JEV-1240: hardship recorded on a loan case, no plan yet.',
+         'Source: hardship_programs.csv (v2026.1), HPT-2026, POL-COLL-004 §4.2-4.3')
+    text(48, 400, 330, '<b>Programme rules checked</b><br/>effective version, product, days past due, months on book, uses in 12 months, insolvency, broken plans in 90 days.', 14, maximum=120)
+    text(48, 274, 330, '<b>Likely eligible</b><br/>' + '<br/>'.join(f"{escape(p['name'])} (approver: {escape(p['approver'].replace('_', ' '))})" for p in eligible), 14, TEAL, maximum=100)
+    text(48, 160, 330, 'Missing inputs are named (income evidence for a term extension). The approver decides; the agent asks for payment only after the options are discussed.', 12.5, MUTED, maximum=80)
+    shot('plan-JEV-1240.png', 400, 40, 512, 380)
+    c.showPage()
+
+    # 15. Backup: Live Call Mode
+    call = f['call']
+    red3 = next(o for o in call['calculator']['options'] if o['program_id'] == 'HP-LOAN-RED3')
+    ext = next(o for o in call['calculator']['options'] if o['program_id'] == 'HP-LOAN-EXT')
+    aff = call['affordability']
+    page('Live Call Mode: the plan follows the conversation', 'JEV-1240 on the phone. Every click recomputes the plan, the checks and the script with the same rules as the brief.',
+         'Source: app/call_session.py; programme terms from hardship_programs v2026.1; PRC-COLL-010 §3.1')
+    top = 400
+    for label, body in [
+            ('Debt details only after the basics', 'Who answered, recording notice, identity. Third parties and voicemail get no debt details.'),
+            ('Hardship options, priced', f"Reduced payment: ${red3['payment_now']:,.2f} to ${red3['payment_during']:,.2f} for {red3['months']} months (agent approves). "
+                                         f"Term extension: ${ext['payment_during']:,.2f} (specialist)."),
+            ('Promises and callbacks checked', f"Within 21 days, legal hours, holidays, the weekly cap. Affordability: the promise is {aff['promise_share_of_disposable']:.0%} of money left each month."),
+            ('Notes to outcomes, quoted', 'Typed notes become proposals, each with its exact sentence; nothing applies until the agent accepts.'),
+            ('Wrap-up to review', 'Note, outcome codes ' + ', '.join(call['wrap_up']['outcome_codes']) + ' and follow-ups go to a supervisor.')]:
+        top = text(48, top, 350, f'<b>{escape(label)}</b>', 13.5, maximum=22)
+        top = text(48, top - 2, 350, escape(body), 11, MUTED, maximum=46) - 10
+    text(48, 66, 350, 'HAC-4447 (consumer proposal): the call page is blocked and its controls are off.', 11.5, RED, maximum=34)
+    shot('call-JEV-1240.png', 420, 40, 492, 368, left_fraction=0.19)
+    c.showPage()
+
+    # 16. Backup: Work queue
+    q = f['queue']
+    page('Work queue: fixed rules, a reason on every row', f"Agent {q['agent_id']}: {q['total']} open cases, ordered by tier, then promise date or days past due, then the next legal contact time.",
+         'Source: app/work_queue.py; vulnerability and protected attributes never change the order')
+    top = 396
+    for t in q['tiers']:
+        if not t['count']:
+            continue
+        text(48, top, 260, f"<b>{escape(t['label'])}</b>  <font color='{TEAL}'>{t['count']}</font>", 14, maximum=22)
+        top = text(48, top - 20, 260, escape(t['rule']), 10.5, MUTED, maximum=44) - 12
+    text(48, 74, 260, 'No model score decides order. Each row shows the next allowed contact.', 12.5, maximum=36)
+    shot('queue-viewport.png', 330, 40, 582, 350, top_fraction=0.02)
+    c.showPage()
+    c.save()
+
 
     reader = PdfReader(output)
     if len(reader.pages) != SLIDES or any(not p.extract_text().strip() for p in reader.pages):

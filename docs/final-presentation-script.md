@@ -1,16 +1,15 @@
 # Final presentation: 15-minute script
 
-Team Adda Wale: **Krish** opens, **Prakhar** explains the why, **Aryan** runs the live demo, **Prakhar** shows the proof, **Ved** closes. The script runs about 14:30, leaving 30 seconds of buffer. The slides are `presentation/AddaWale-Finals-Presentation.pdf` (16 slides; printable copies of this script and the demo script are in the same folder); the app runs at http://127.0.0.1:3000.
+Four parts, one per speaker, in this order: **Krish** opens with the problem, **Prakhar** explains how we decided and shows the proof, **Aryan** runs the live demo, **Ved** closes. The deck is ordered the same way, so nobody skips slides. The script runs about 14:30, leaving 30 seconds of buffer. The slides are `presentation/AddaWale-Finals-Presentation.pdf` (16 slides; printable copies of this script and the demo script are in the same folder); the app runs at http://127.0.0.1:3000.
 
 | Starts | Part and speaker | Slides / screen |
 |---|---|---|
-| 0:00 | **1. The problem**, Krish (3:15) | Slides 1-3, then the live Overview and Work queue |
-| 3:15 | **2. How we decided**, Prakhar (3:15) | Slides 4-6 |
-| 6:30 | **3. Live demo**, Aryan (5:15) | Live app: customer page, Call Mode, blocked customer, supervisor review |
-| 11:45 | **4. Proof it holds up**, Prakhar (1:45) | Slides 12, 13, 15 |
-| 13:30 | **5. Close**, Ved (1:00) | Slides 14 and 16 |
+| 0:00 | **Part 1. The problem**, Krish (3:15) | Slides 1-3, then the live Overview and Work queue |
+| 3:15 | **Part 2. How we decided, and the proof**, Prakhar (5:00) | Slides 4-9 |
+| 8:15 | **Part 3. Live demo**, Aryan (5:15) | Live app: customer page, Call Mode, blocked customer, supervisor review |
+| 13:30 | **Part 4. Close**, Ved (1:00) | Slides 10-11 |
 
-Slides 7-11 are not presented: the live demo shows the same things. They are the backup if the app fails (see the end).
+Slides 12-16 are marked *Backup slide* and are not presented: the live demo shows the same screens. Use them only if the app fails (see the end).
 
 Speak at a calm pace. Words in **bold** in the "Do" column are buttons or screen names. Each part ends with a hand-off line naming the next speaker.
 
@@ -35,7 +34,7 @@ Speak at a calm pace. Words in **bold** in the "Do" column are buttons or screen
 | 2:50 | Click **Work queue** | "And this is one agent's day: 296 cases in a fixed order, not a black-box score. Each row says why it's there and when the agent may legally call next." |
 | 3:05 | Alt+Tab back to the slides, slide 4 | "Before we show the product, Prakhar will explain how we decided what to build, and why." |
 
-## Part 2: How we decided (Prakhar, 3:15)
+## Part 2: How we decided, and the proof (Prakhar, 5:00)
 
 | Time | Do | Say |
 |---|---|---|
@@ -45,46 +44,41 @@ Speak at a calm pace. Words in **bold** in the "Do" column are buttons or screen
 | 5:00 | Slide 5, point at DuckDB and SQLite | "Customer data lives in DuckDB, a columnar database in one file: 1 million customers, 2.7 million contacts, 760 thousand notes, and a 30-day scan takes milliseconds. The app opens it read-only. The only writes are reviews and the audit log, in a separate SQLite file that is hash-chained, so tampering shows. Gemini is optional and sits behind the API." |
 | 5:25 | Slide 6 | "Now the question every judge should ask: why not just use an LLM to find hardship? We didn't assume; we measured. Same 126 held-out notes, 38 with hardship. Our detector found all 38 with zero false alarms. Gemini also found 38, but raised four false alarms." |
 | 5:50 | Slide 6, point at the line under the table | "Three of those four were notes tagged 'customer vulnerable, financial hardship'. In this bank's notes, that's a vulnerability tag, not hardship, and our policy treats it differently. Gemini also took 1.4 seconds a note instead of under a millisecond, would send every note outside the bank, and gives no reason. For all 760 thousand notes, that's 12 days of calls." |
-| 6:15 | Slide 6 | "So the small model flags hardship, and the LLM only proposes where a person checks. We chose Gemini 3.5 Flash-Lite because it's fast, returns structured JSON we validate, and the larger model was overloaded the day we tested. Aryan will now show you the product live." |
+| 6:15 | Slide 6 | "So the small model flags hardship, and the LLM only proposes where a person checks. We chose Gemini 3.5 Flash-Lite because it's fast, returns structured JSON we validate, and the larger model was overloaded the day we tested." |
+| 6:30 | Slide 7 | "The same rules plan the whole book every night: 93,320 customers in 21 seconds on one laptop, with zero errors. That's the same function behind every brief and every call you'll see in the demo." |
+| 7:00 | Slide 8 | "And it isn't tied to this dataset. The snapshot date, the holidays, the weekly cap per case, the policy versions and the programme rules are all read from the data. We built a fake March 2027 release with a stricter cap and new policy versions; the plan followed it with no code changes." |
+| 7:35 | Slide 9 | "We also measured our own detector honestly: recall went from 68 to 95 percent and precision from 90 to 98, and on notes we never looked at, it found 36 of 38 with no false alarms. The caveat is on the slide: this synthetic data reuses phrasings, so it's coverage of this dataset, not real-world accuracy." |
+| 8:05 | Stay on slide 9 | "Now Aryan will show you the product live." |
 
 ## Part 3: Live demo (Aryan, 5:15)
 
 | Time | Do | Say |
 |---|---|---|
-| 6:30 | Alt+Tab to the browser. Press **Ctrl+K**, type `SAV-6847`, open the customer. **History & contact** tab | "Ctrl+K takes us to any customer. This is one view of a customer across every source system." |
-| 6:45 | Point at the calendar | "When can we call her? Monday and Tuesday are blocked: three attempts already in seven days. Wednesday is the National Day for Truth and Reconciliation. So Thursday, 7 am to 9 pm in her own time zone. The holidays are computed for any year, not typed in." |
-| 7:15 | **Ctrl+K**, type `JEV`, choose **Call: Jérôme Vallée** | "Now a live call. Jérôme has an auto loan, 86 days past due, and prefers French; the script tells the agent to offer French." |
-| 7:30 | **Who answered?** Customer. Tick **Recording notice** and **Verify identity** | "Nothing about the debt is shown until the recording notice is read and identity is verified." |
-| 7:50 | Tick **Hardship**, choose **Job loss**. Point at the live plan and **Hardship options** | "He says he lost his job. The plan changes immediately: offer a hardship programme before any payment request. These are his real numbers: $631.72 a month drops to $315.86 for three months, which the agent can approve. A term extension is $578.71 but needs a specialist. Skipping a payment isn't offered, and it says why: 86 days is over the 60-day limit." |
-| 8:35 | **Choose** on *3-month reduced payment* | "He takes the reduced payment." |
-| 8:45 | Income `2400`, expenses `1900`. Promise `315.86` on 15 Oct | "Can he afford a promise? $315.86 is 63 percent of what he has left each month, so the app warns the agent. It's within 21 days, so the date is accepted." |
-| 9:15 | Paste the call note into **Call notes**, press **Extract from notes** | "Agents type fast. Extract turns notes into proposals: job loss, the promise, a callback. Each shows the exact sentence it came from, and nothing changes until the agent accepts it." |
-| 9:45 | **Go to wrap-up** | "The call note is written for the agent, with the policy cited. The outcome codes are set, and one reminder is scheduled before the 15th; it counts toward the weekly cap." |
-| 10:10 | **Submit for supervisor review** | "It goes to a supervisor. The app never contacts the customer itself." |
-| 10:20 | **Ctrl+K**, `HAC-4447`, open **Call** | "And when an agent must not call: this customer filed a consumer proposal. The call page is blocked, the controls are off, and contact goes through the trustee." |
-| 10:45 | Open **Reviews**, open the call note, **Approve** with a reason such as "Programme within agent authority" | "The supervisor sees the note and the outcome codes, and approves, edits or rejects with a reason. Every action goes into the audit log." |
-| 11:25 | Alt+Tab back to the slides, slide 12 | "Prakhar will now show that this holds up at full scale and on new data." |
+| 8:15 | Alt+Tab to the browser. Press **Ctrl+K**, type `SAV-6847`, open the customer. **History & contact** tab | "Ctrl+K takes us to any customer. This is one view of a customer across every source system." |
+| 8:30 | Point at the calendar | "When can we call her? Monday and Tuesday are blocked: three attempts already in seven days. Wednesday is the National Day for Truth and Reconciliation. So Thursday, 7 am to 9 pm in her own time zone. The holidays are computed for any year, not typed in." |
+| 9:00 | **Ctrl+K**, type `JEV`, choose **Call: Jérôme Vallée** | "Now a live call. Jérôme has an auto loan, 86 days past due, and prefers French; the script tells the agent to offer French." |
+| 9:15 | **Who answered?** Customer. Tick **Recording notice** and **Verify identity** | "Nothing about the debt is shown until the recording notice is read and identity is verified." |
+| 9:35 | Tick **Hardship**, choose **Job loss**. Point at the live plan and **Hardship options** | "He says he lost his job. The plan changes immediately: offer a hardship programme before any payment request. These are his real numbers: $631.72 a month drops to $315.86 for three months, which the agent can approve. A term extension is $578.71 but needs a specialist. Skipping a payment isn't offered, and it says why: 86 days is over the 60-day limit." |
+| 10:20 | **Choose** on *3-month reduced payment* | "He takes the reduced payment." |
+| 10:30 | Income `2400`, expenses `1900`. Promise `315.86` on 15 Oct | "Can he afford a promise? $315.86 is 63 percent of what he has left each month, so the app warns the agent. It's within 21 days, so the date is accepted." |
+| 11:00 | Paste the call note into **Call notes**, press **Extract from notes** | "Agents type fast. Extract turns notes into proposals: job loss, the promise, a callback. Each shows the exact sentence it came from, and nothing changes until the agent accepts it." |
+| 11:30 | **Go to wrap-up** | "The call note is written for the agent, with the policy cited. The outcome codes are set, and one reminder is scheduled before the 15th; it counts toward the weekly cap." |
+| 11:55 | **Submit for supervisor review** | "It goes to a supervisor. The app never contacts the customer itself." |
+| 12:05 | **Ctrl+K**, `HAC-4447`, open **Call** | "And when an agent must not call: this customer filed a consumer proposal. The call page is blocked, the controls are off, and contact goes through the trustee." |
+| 12:30 | Open **Reviews**, open the call note, **Approve** with a reason such as "Programme within agent authority" | "The supervisor sees the note and the outcome codes, and approves, edits or rejects with a reason. Every action goes into the audit log." |
+| 13:10 | Alt+Tab back to the slides, slide 10 | "Ved will take us to the close." |
 
-If time is short, cut in this order: the affordability step (8:45), then the Extract step (9:15). Never cut the blocked customer: it is the compliance proof.
+If time is short, cut in this order: the affordability step (10:30), then the Extract step (11:00). Never cut the blocked customer: it is the compliance proof.
 
-## Part 4: Proof it holds up (Prakhar, 1:45)
-
-| Time | Do | Say |
-|---|---|---|
-| 11:45 | Slide 12 | "Everything you just saw runs for the whole book every night: 93,320 customers planned in 21 seconds on one laptop, with zero errors. The chart is today's first step for each of them." |
-| 12:15 | Slide 13 | "And it isn't tied to this dataset. The snapshot date, the holidays, the weekly cap per case, the policy versions and the programme rules are all read from the data. We built a fake March 2027 release with a stricter cap and new policy versions; the plan followed it with no code changes." |
-| 12:50 | Slide 15 | "We measured the hardship detector honestly: recall went from 68 to 95 percent and precision from 90 to 98, and on notes we never looked at, it found 36 of 38 with no false alarms. The caveat is on the slide: this synthetic data reuses phrasings, so it's coverage of this dataset, not real-world accuracy." |
-| 13:20 | Press the left arrow once, back to slide 14 | "Ved will take us to the close." |
-
-## Part 5: Close (Ved, 1:00)
+## Part 4: Close (Ved, 1:00)
 
 Ved reads from this page. No live clicking.
 
 | Time | Do | Say |
 |---|---|---|
-| 13:30 | Slide 14 | "Managers can also ask questions in plain English. Every answer shows its SQL. If a question can't be answered correctly, it asks for clarification instead of guessing, and it refuses requests like exporting personal data. It matched all 12 of the organisers' reference answers." |
-| 13:55 | Slide 16 | "To sum up: rules decide, AI suggests, and people approve. 553 tests pass, and we checked every screen in a real browser. We state our limits openly: the data is synthetic, and the app never contacts a customer; it only prepares and records." |
-| 14:20 | Stay on slide 16 | "Thank you. We're happy to take your questions." |
+| 13:30 | Slide 10 | "Managers can also ask questions in plain English. Every answer shows its SQL. If a question can't be answered correctly, it asks for clarification instead of guessing, and it refuses requests like exporting personal data. It matched all 12 of the organisers' reference answers." |
+| 13:55 | Slide 11 | "To sum up: rules decide, AI suggests, and people approve. 553 tests pass, and we checked every screen in a real browser. We state our limits openly: the data is synthetic, and the app never contacts a customer; it only prepares and records." |
+| 14:20 | Stay on slide 11 | "Thank you. We're happy to take your questions." |
 
 ## Questions: who answers what
 
@@ -104,6 +98,6 @@ Ved's two answers, word for word:
 
 ## If something breaks
 
-- **App down or slow:** Aryan says "Let me show you the same flow on the slides" and presents slides 8 (SAV-6847 calendar), 9 (JEV-1240 hardship options) and 10 (Call Mode) with the same lines. Do not apologise; keep the same narration. Slides 7 (the brief) and 11 (work queue) are extra backups.
-- **Running long:** cut the affordability step, then the Extract step, then slide 15.
+- **App down or slow:** Aryan says "Let me show you the same flow on the slides" and presents backup slides 13 (SAV-6847 calendar), 14 (JEV-1240 hardship options) and 15 (Call Mode) with the same lines. Do not apologise; keep the same narration. Slides 12 (the brief) and 16 (work queue) are extra backups.
+- **Running long:** cut the affordability step, then the Extract step, then slide 9.
 - **Someone freezes:** the next speaker picks up from the hand-off line; every part stands on its own.
