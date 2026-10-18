@@ -21,7 +21,7 @@ The prelim submission is tagged `prelim-submission`. For the finals we added:
 - **Hardship detector v2.** Wider English and French cues plus illness, separation and disaster cues from POL-COLL-004 §4.2, measured with customer-grouped cross-validation; retrained, it finds 36 of 38 held-out hardship notes with no false alarms ([evaluation](docs/hardship-detector-evaluation.md)).
 - **Verification.** A rendered-browser walkthrough at desktop and phone width, including Call Mode, the blocked customer, the calendar and the palette: 49 of 49 checks ([scripts/e2e_finals.mjs](scripts/e2e_finals.mjs)), and pinned demo customers ([tests/test_demo_customers.py](tests/test_demo_customers.py)). It found and fixed a concurrency bug in the database lockdown.
 - **Presentation material.** The finals deck and printable scripts are in [presentation/](presentation/): the 16-slide deck, the 15-minute four-speaker script and the live demo script. Also: the [architecture diagram](docs/architecture-build.pdf), a 16-slide finals deck generated from measured results ([scripts/generate_finals_deck.py](scripts/generate_finals_deck.py)), the [15-minute four-speaker presentation script](docs/final-presentation-script.md), the [live demo script](docs/demo-walkthrough.md), [judge Q&A preparation](docs/finals-judge-qa.md) a [team guide to how the product works](docs/how-it-works.md), and [how we decided](docs/design-decisions.md): the architecture, model and LLM choices with the options we rejected, including a measured comparison of our hardship detector against Gemini on the same held-out notes ([scripts/compare_llm_classifier.py](scripts/compare_llm_classifier.py)).
-- **Cleanup.** Prelim planning notes and process reviews moved to [docs/archive](docs/archive/README.md).
+- **Cleanup.** Prelim planning notes, process reviews and prelim submission tooling were removed; the prelim state is preserved in the `prelim-submission` tag.
 
 ## The problem we address
 
@@ -310,20 +310,17 @@ The organizer's 15 extra questions are included at `submission/benchmark_questio
 
 ```bash
 .venv/bin/python scripts/run_benchmark.py --extra submission/benchmark_questions_extra.csv
-.venv/bin/python scripts/package_submission.py --extra submission/benchmark_questions_extra.csv --final --check-only
 ```
 
-After checking results, commit and push the final revision, then run the same package command without `--check-only`. It creates `../deliverables/AddaWale-code-backup.zip` from committed files and records the commit and SHA-256 in a manifest. `--final` requires all 15 extra questions; a pre-release backup is interim. The check verifies format and coverage, not hidden-answer correctness.
-
-The prelim nine-slide presentation is generated directly as PDF from the measured local reports (the finals deck uses `scripts/generate_finals_deck.py`):
+The finals deck and printable scripts are generated as PDF from the measured local reports, and the current copies are in [presentation/](presentation/):
 
 ```bash
-.venv/bin/python scripts/generate_pitch_pdf.py
+.venv/bin/python scripts/generate_finals_deck.py                  # 16-slide deck
+.venv/bin/python scripts/generate_demo_script_pdf.py              # live demo script
+.venv/bin/python scripts/generate_demo_script_pdf.py --presentation  # 15-minute presentation script
 ```
 
-The final deck also reads the C360 and independent parity reports. Generate them with `scripts/check_c360_contract.py` and `scripts/check_feature_parity.py --sample-size 1000 --output data/feature-parity.json` first. Its customer example is HAC-4447 and is checked against the local database. The [exact video script](docs/archive/prelim/demo-walkthrough.md) includes its verified values, click sequence and copy-ready review text. Run `.venv/bin/python scripts/generate_demo_script_pdf.py` for the printable recording aid at `../deliverables/AddaWale-Video-Script.pdf`.
-
-Output: `../deliverables/AddaWale-Presentation.pdf`. Regenerate and review it after the final benchmark run so its counts are current. The deck and existing architecture use conventional text, shapes and charts; no image-generation tool is used.
+The deck reads the test results, development validation, hardship evaluation, browser check, C360 and parity reports and the LLM comparison (`scripts/compare_llm_classifier.py`), and refuses to export if any of them failed or is missing. It writes to `../deliverables/`; copy the result into `presentation/` when it changes. The deck and architecture use conventional text, shapes and charts; no image-generation tool is used.
 
 For frontend checks, from the repository root:
 
@@ -370,7 +367,8 @@ These are local checks, not an organizer score. Correctness of the extra answers
 | `scripts/` | Dataset download, data preparation, model training, verification and benchmark export. |
 | `tests/` | Automated tests for access, question handling, review storage and features. |
 | `config/` | Customer 360 data contract and optional extra holiday dates (for example provincial or one-off closures). |
-| `docs/` | Architecture, data-quality/model reports, API contract, finals demo and Q&A; prelim material in `docs/archive/`. |
+| `docs/` | Architecture and design decisions, data-quality/model reports, API contract, the finals demo and presentation scripts, judge Q&A and the team guide. |
+| `presentation/` | The finals deck and printable scripts (PDF). |
 | `submission/` | Generated benchmark answers. |
 | `data/` | Local release, databases and trained model; ignored by Git. |
 
@@ -382,17 +380,11 @@ These are local checks, not an organizer score. Correctness of the extra answers
 - [Model evaluation](docs/model-evaluation.md)
 - [Released benchmark answers](submission/benchmark_answers.csv)
 - [API contract](docs/api-contract.md)
-- [Question planner implementation and scope](docs/archive/prelim/reviews/insight-implementation.md)
-- [Extra benchmark implementation and review](docs/archive/prelim/reviews/extra-benchmark-release.md)
 - [Voice processing and measured checks](docs/voice-verification.md)
-- [Accuracy and company readiness audit](docs/archive/prelim/reviews/accuracy-readiness-audit.md)
-- [Combined build plan](docs/archive/prelim/reviews/build-plan-review.md)
-- [Build status and remaining work](docs/archive/prelim/build-status.md)
-- [Final submission checklist](docs/archive/prelim/submission-checklist.md)
+- [How we decided: architecture, model and LLM choices](docs/design-decisions.md)
 - [Finals live demo script](docs/demo-walkthrough.md), [judge Q&A preparation](docs/finals-judge-qa.md) and [team guide to how the product works](docs/how-it-works.md)
 - [Hardship detector evaluation](docs/hardship-detector-evaluation.md)
-- [Prelim recording walkthrough](docs/archive/prelim/demo-walkthrough.md)
-- [Historical design-phase document](docs/system-design.md)
+- [15-minute presentation script](docs/final-presentation-script.md) and the [finals deck](presentation/AddaWale-Finals-Presentation.pdf)
 
 ## Scope and limitations
 
@@ -403,7 +395,7 @@ These are local checks, not an organizer score. Correctness of the extra answers
 | CockroachDB for the data platform | DuckDB for local analytics and release Parquet history; SQLite for sessions and reviews. |
 | A separately hosted feature service | Shared, versioned Python/SQL definitions for training, batch calculation and live briefs. |
 | Broader LLM-assisted answers | Reviewed local metric plans and retrieval, with optional Gemini planning and verified source excerpts. |
-| LLM hardship-cue extraction | Six explicit bilingual financial cues and a locally evaluated logistic classifier; Gemini evidence selection does not change cues or decisions. |
+| LLM hardship-cue extraction | Nine explicit bilingual financial cues and a locally evaluated logistic classifier; Gemini evidence selection does not change cues or decisions. |
 | AI schema-mapping suggestions | Mappings grounded in the released schema and actual headers; no speculative mapping step. |
 | Specialist approval role | Supervisor reviews every brief with a reason; a separate specialist role is not implemented. |
 | Broader C360 summary contract | Eight summary fields plus linked accounts, cases, notes and feature views. Consent aggregates, 30/90-day counts, per-customer DQ status and reviewed hardship status are not added to the summary. |
@@ -413,7 +405,7 @@ The application still requires supervisor approval for every brief. It does not 
 
 Customer matching is conservative: unresolved identities are excluded from linked accounts and counted in the quality report. The pipeline currently produces **1,014,631 golden customer records**; this is not a claim that it has perfectly recovered the release's underlying one million people. Source identifiers retain leading zeros, invalid typed values remain available in raw data, and only empty CSV fields become null. Portfolio totals include source cases with unresolved customer references, while C360 views contain linked cases, so their totals can differ.
 
-The question planner supports defined metrics and policy topics rather than unrestricted conversation. Requested supported groupings are preserved; unsupported groups and ambiguous cohorts require clarification. Historical roll-rate questions need two available month ends; generic collected-amount requests clarify the distinction between all case-account payments and payments against promises. The [accuracy audit](docs/archive/prelim/reviews/accuracy-readiness-audit.md) records the original gaps; the [correctness release](docs/archive/prelim/reviews/correctness-gemini-release.md) records fixes and remaining limits. The 12/12 numeric development result applies to those particular questions and does not establish correctness for all phrasings or hidden questions. The financial model can miss unfamiliar wording and nonfinancial hardship; its evaluation does not prove fairness, production readiness or improved recovery rates. Protected attributes are excluded from model inputs and serving views; restricted group data is used only for local evaluation.
+The question planner supports defined metrics and policy topics rather than unrestricted conversation. Requested supported groupings are preserved; unsupported groups and ambiguous cohorts require clarification. Historical roll-rate questions need two available month ends; generic collected-amount requests clarify the distinction between all case-account payments and payments against promises. The 12/12 numeric development result applies to those particular questions and does not establish correctness for all phrasings or hidden questions. The financial model can miss unfamiliar wording and nonfinancial hardship; its evaluation does not prove fairness, production readiness or improved recovery rates. Protected attributes are excluded from model inputs and serving views; restricted group data is used only for local evaluation.
 
 If the app reports that the dataset is not ready, finish `scripts/build_data.py`. If brief generation reports that the model is missing, stop the backend, run `scripts/train_model.py`, then restart it. If requests fail, check that the backend is running on port 8000 and the frontend on port 3000.
 

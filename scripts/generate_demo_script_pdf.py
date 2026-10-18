@@ -15,8 +15,8 @@ from reportlab.pdfbase.ttfonts import TTFont
 from pypdf import PdfReader
 
 
-def export(source=ROOT / 'docs/archive/prelim/demo-walkthrough.md', output=ROOT.parent / 'deliverables/AddaWale-Video-Script.pdf',
-           label='HAC-4447 recording aid - read only the narration aloud', title_text='Adda Wale - exact HAC-4447 video script'):
+def export(source=ROOT / 'docs/demo-walkthrough.md', output=ROOT / 'presentation/AddaWale-Finals-Demo-Script.pdf',
+           label='Finals live demo script - narration in the Say column', title_text='Adda Wale - finals live demo script'):
     pdfmetrics.registerFont(TTFont('DemoSans', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
     pdfmetrics.registerFont(TTFont('DemoBold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
     normal = ParagraphStyle('body', fontName='DemoSans', fontSize=9.6, leading=12.6, spaceAfter=3)
@@ -94,10 +94,11 @@ def export(source=ROOT / 'docs/archive/prelim/demo-walkthrough.md', output=ROOT.
 
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(description='Printable demo script. Defaults reproduce the prelim HAC-4447 video aid.')
-    parser.add_argument('--finals', action='store_true', help='Print docs/demo-walkthrough.md (finals live demo) instead.')
-    if parser.parse_args().finals:
-        export(ROOT / 'docs/demo-walkthrough.md', ROOT.parent / 'deliverables/AddaWale-Finals-Demo-Script.pdf',
-               'Finals live demo script - narration in the Say column', 'Adda Wale - finals live demo script')
+    parser = argparse.ArgumentParser(description='Printable finals scripts in presentation/: the live demo script, or the 15-minute presentation script.')
+    parser.add_argument('--presentation', action='store_true', help='Print docs/final-presentation-script.md instead of the demo script.')
+    parser.add_argument('--finals', action='store_true', help=argparse.SUPPRESS)  # kept for old commands; the demo script is the default
+    if parser.parse_args().presentation:
+        export(ROOT / 'docs/final-presentation-script.md', ROOT / 'presentation/AddaWale-Final-Presentation-Script.pdf',
+               'Final presentation script - 15 minutes, four speakers', 'Adda Wale - final presentation script')
     else:
         export()
