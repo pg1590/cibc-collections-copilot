@@ -4,6 +4,7 @@ import { AlertTriangle, Ban, CheckCircle2, ChevronDown, Clock, ListChecks, PlayC
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { PolicyLink } from "@/components/policy-link";
 import type { ActionPlan, PlanStep, Programme, StepStatus } from "@/lib/plan-types";
 import { cn } from "@/lib/utils";
 
@@ -44,9 +45,7 @@ function Step({ step, changed = false, compact = false }: { step: PlanStep; chan
           {!brief && (step.policy.length > 0 || (!compact && step.evidence.length > 0)) && (
             <div className="flex flex-wrap gap-1.5 pt-1">
               {step.policy.map((p) => (
-                <Badge key={p} variant="teal" className="font-mono">
-                  {p}
-                </Badge>
+                <PolicyLink key={p} text={p} />
               ))}
               {!compact && step.evidence.map((e) => (
                 <span key={e} className="bg-muted/70 text-muted-foreground rounded px-1.5 py-0.5 font-mono text-[0.75rem] break-all">

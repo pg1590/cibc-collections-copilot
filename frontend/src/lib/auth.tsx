@@ -61,6 +61,7 @@ export const SECTION_ROLES = {
   call: ["agent", "supervisor"],
   reviews: ["agent", "supervisor"],
   quality: ["analyst", "supervisor"],
+  policies: ["analyst", "agent", "supervisor"],
 } as const satisfies Record<string, readonly Role[]>;
 
 export type Section = keyof typeof SECTION_ROLES;

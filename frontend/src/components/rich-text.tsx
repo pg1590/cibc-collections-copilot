@@ -91,8 +91,9 @@ function lines(parts: string[], markdown: boolean): ReactNode {
   ));
 }
 
-export function RichText({ text, className }: { text: string; className?: string }) {
-  const markdown = MARKDOWN.test(text);
+/** `markdown` forces Markdown handling for text known to be Markdown (release documents). */
+export function RichText({ text, className, markdown: forced }: { text: string; className?: string; markdown?: boolean }) {
+  const markdown = forced ?? MARKDOWN.test(text);
   return (
     <div className={cn("space-y-3 break-words", className)}>
       {parse(text).map((block, i) => {

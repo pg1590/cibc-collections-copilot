@@ -36,10 +36,15 @@ export default function LoginPage() {
     if (ready && session) router.replace("/overview");
   }, [ready, session, router]);
 
-  // The welcome page links here with ?role=agent and so on.
+  // The welcome page links here with ?role=agent and so on. Anything typed (or filled by a
+  // password manager) before the page finished loading is kept rather than reset.
   useEffect(() => {
     const role = new URLSearchParams(window.location.search).get("role");
-    if (isRole(role)) setUsername(role);
+    const typedUser = (document.getElementById("username") as HTMLInputElement | null)?.value;
+    const typedPassword = (document.getElementById("password") as HTMLInputElement | null)?.value;
+    if (typedUser && typedUser !== "analyst") setUsername(typedUser);
+    else if (isRole(role)) setUsername(role);
+    if (typedPassword) setPassword(typedPassword);
   }, []);
 
   const selected = ACCOUNTS.find((a) => a.username === username.trim());
@@ -74,16 +79,16 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="font-humane bg-mist text-ink-soft flex min-h-dvh flex-col">
+    <div className="font-humane text-ink-soft flex min-h-dvh flex-col">
       <header className="site-bar">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-4 sm:px-8">
-          <Link href="/" className="focus-visible:ring-primary/40 flex items-center gap-2.5 rounded-lg outline-none focus-visible:ring-[3px]">
-            <BrandMark />
+          <Link href="/" className="flex items-center gap-2.5 rounded-lg outline-none focus-visible:ring-[3px] focus-visible:ring-chrome-accent/60">
+            <BrandMark tone="dark" />
             <span className="text-[1.0625rem] font-medium">Collections Copilot</span>
           </Link>
           <Link
             href="/"
-            className="text-slate hover:text-ink-soft hover:bg-seaglass/60 focus-visible:ring-primary/40 rounded-full px-4 py-2 text-[0.9375rem] outline-none focus-visible:ring-[3px]"
+            className="text-chrome-muted hover:text-chrome-foreground rounded-full px-4 py-2 text-[0.9375rem] outline-none hover:bg-white/8 focus-visible:ring-[3px] focus-visible:ring-chrome-accent/60"
           >
             Back to home
           </Link>

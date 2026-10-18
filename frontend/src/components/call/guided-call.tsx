@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState } from "react";
 import { AlertTriangle, Ban, CheckCircle2, Circle, Lock, PhoneMissed, ShieldAlert, Square, SquareCheck, User, UserX, Voicemail, X } from "lucide-react";
+import { PolicyLink } from "@/components/policy-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,7 +69,13 @@ export function CheckLine({ check }: { check: Check }) {
       <div className="min-w-0">
         <span className="sr-only">{s.label}: </span>
         <span className={cn(check.status !== "ok" && "font-medium", s.text)}>{check.message}</span>
-        {check.policy.length > 0 && <span className="text-muted-foreground ml-1.5 font-mono text-[0.75rem] break-words">{check.policy.join(", ")}</span>}
+        {check.policy.length > 0 && (
+          <span className="ml-1.5 inline-flex flex-wrap gap-x-2">
+            {check.policy.map((p) => (
+              <PolicyLink key={p} text={p} variant="inline" />
+            ))}
+          </span>
+        )}
       </div>
     </li>
   );
@@ -188,7 +195,13 @@ function ChecklistStep({ session, outcomes, update }: { session: CallSession; ou
                     {!field && item.done && <span className="text-primary text-xs font-medium">Done</span>}
                   </span>
                   <span className="text-foreground/85 mt-1 block text-sm leading-relaxed">{item.text}</span>
-                  {item.policy.length > 0 && <span className="text-muted-foreground mt-1 block font-mono text-[0.75rem]">{item.policy.join(", ")}</span>}
+                  {item.policy.length > 0 && (
+                    <span className="mt-1 flex flex-wrap gap-x-2">
+                      {item.policy.map((p) => (
+                        <PolicyLink key={p} text={p} variant="inline" />
+                      ))}
+                    </span>
+                  )}
                 </span>
               </>
             );

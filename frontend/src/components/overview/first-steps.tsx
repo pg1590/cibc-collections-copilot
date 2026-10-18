@@ -43,7 +43,7 @@ export function FirstSteps({ plans }: { plans: PlanSummary }) {
             <li key={key} className="grid items-center gap-x-6 gap-y-1.5 md:grid-cols-[17rem_1fr]">
               <span className="text-[0.9375rem]">{label}</span>
               <span className="flex items-center gap-3">
-                <span className="bg-muted h-2.5 flex-1 overflow-hidden rounded-full" aria-hidden>
+                <span className="bg-seaglass/60 h-2.5 flex-1 overflow-hidden rounded-full" aria-hidden>
                   <span
                     className={cn(styles.bar, "bg-primary block h-full rounded-full")}
                     style={{ width: `${Math.max((n / max) * 100, 1)}%`, "--i": i } as React.CSSProperties}

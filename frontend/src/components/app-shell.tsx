@@ -22,6 +22,7 @@ const NAV: { href: string; label: string; section: Section }[] = [
   { href: "/briefs", label: "Briefs", section: "briefs" },
   { href: "/reviews", label: "Reviews", section: "reviews" },
   { href: "/quality", label: "Data", section: "quality" },
+  { href: "/policies", label: "Policies", section: "policies" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -41,7 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Tables and dashboards get the full bar width; reading pages keep shorter lines.
   const width = pathname.startsWith("/call/")
     ? "max-w-[100rem] pb-0 sm:pb-0"
-    : ["/ask", "/briefs", "/reviews"].some((p) => pathname.startsWith(p))
+    : ["/ask", "/briefs", "/reviews", "/policies"].some((p) => pathname.startsWith(p))
       ? "max-w-6xl"
       : "max-w-7xl";
 
@@ -53,10 +54,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           href={href}
           aria-current={active ? "page" : undefined}
           className={cn(
-            "shrink-0 rounded-full px-4 py-1.5 text-[0.9375rem] whitespace-nowrap transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35",
+            "shrink-0 rounded-full px-3.5 py-1.5 text-[0.9375rem] whitespace-nowrap transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-chrome-accent/60",
             active
-              ? "bg-paper text-foreground ring-line-soft font-medium shadow-[0_1px_2px_rgb(31_45_61/0.08)] ring-1"
-              : "text-muted-foreground hover:text-foreground hover:bg-paper/60",
+              ? "bg-chrome-accent text-chrome font-medium"
+              : "text-chrome-muted hover:text-chrome-foreground hover:bg-white/8",
           )}
         >
           {label}
@@ -78,13 +79,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-8">
           <Link
             href="/overview"
-            className="flex shrink-0 items-center gap-2.5 rounded-lg whitespace-nowrap outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35"
+            className="flex shrink-0 items-center gap-2.5 rounded-lg whitespace-nowrap outline-none focus-visible:ring-[3px] focus-visible:ring-chrome-accent/60"
           >
-            <BrandMark />
-            <span className="hidden text-[1.0625rem] font-medium sm:inline lg:hidden xl:inline">Collections Copilot</span>
+            <BrandMark tone="dark" />
+            <span className="text-chrome-foreground hidden text-[1.0625rem] font-medium sm:inline lg:hidden xl:inline">Collections Copilot</span>
           </Link>
 
-          <nav aria-label="Main" className="hidden min-w-0 flex-1 items-center justify-center gap-1.5 overflow-x-auto [scrollbar-width:none] lg:flex xl:gap-3">
+          <nav aria-label="Main" className="hidden min-w-0 flex-1 items-center justify-center gap-0.5 overflow-x-auto [scrollbar-width:none] lg:flex xl:gap-1">
             {links}
           </nav>
 
@@ -99,16 +100,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => setPalette(true)}
-              className="bg-paper/70 text-muted-foreground hover:text-foreground hover:bg-paper ring-line-soft flex h-9 shrink-0 items-center gap-2 rounded-full px-3 text-sm ring-1 transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35"
+              className="text-chrome-muted hover:text-chrome-foreground flex h-9 shrink-0 items-center gap-2 rounded-full bg-white/8 px-3 text-sm ring-1 ring-white/12 transition-colors outline-none hover:bg-white/14 focus-visible:ring-[3px] focus-visible:ring-chrome-accent/60"
               aria-label="Search customers and pages (Ctrl K)"
             >
               <Search className="size-4" aria-hidden />
               <span className="hidden xl:inline">Search</span>
-              <kbd className="text-muted-foreground/80 hidden font-sans text-xs xl:inline">Ctrl K</kbd>
+              <kbd className="text-chrome-muted/80 hidden font-sans text-xs xl:inline">Ctrl K</kbd>
             </button>
             <span
               title={`Signed in as ${session?.user.username} (${role})`}
-              className="bg-seaglass text-accent-foreground ml-1 grid size-9 shrink-0 place-items-center rounded-full text-sm font-medium uppercase"
+              className="bg-chrome-accent text-chrome ml-1 grid size-9 shrink-0 place-items-center rounded-full text-sm font-medium uppercase"
             >
               <span aria-hidden>{session?.user.username.slice(0, 1)}</span>
               <span className="sr-only">
@@ -118,7 +119,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={logout}
-              className="text-muted-foreground hover:text-foreground hover:bg-paper/70 flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35"
+              className="text-chrome-muted hover:text-chrome-foreground flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm transition-colors outline-none hover:bg-white/8 focus-visible:ring-[3px] focus-visible:ring-chrome-accent/60"
             >
               <LogOut className="size-4" aria-hidden />
               <span className="hidden sm:inline">Sign out</span>

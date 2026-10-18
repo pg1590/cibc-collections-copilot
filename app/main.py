@@ -15,7 +15,7 @@ from fastapi import Depends,FastAPI,HTTPException,Query
 from fastapi.security import HTTPAuthorizationCredentials,HTTPBearer
 from fastapi.responses import Response
 from pydantic import BaseModel,Field
-from app import storage, runtime, voice, action_plan, work_queue, portfolio_checks, call_session, customer360
+from app import storage, runtime, voice, action_plan, work_queue, portfolio_checks, call_session, customer360, documents
 from app.features import VERSION,TEXT_FEATURES,feature_sql,evidence,definitions,text_features
 from app.settings import DATASET,DB,QUALITY,MODEL,MODEL_REPORT,ROOT,SNAPSHOT
 from datetime import date as _date,timedelta as _timedelta
@@ -485,6 +485,11 @@ def quality(u=Depends(user)):
     if u['role']=='agent':raise HTTPException(403,'Data quality reports require an analyst or supervisor.')
     if not QUALITY.exists():raise HTTPException(503,'Dataset pipeline is not ready.')
     return json.loads(QUALITY.read_text(encoding='utf-8'))
+
+
+@app.get('/api/documents')
+def policy_library(u=Depends(user)):
+    return documents.library(DATASET)
 
 
 @app.get('/api/features')

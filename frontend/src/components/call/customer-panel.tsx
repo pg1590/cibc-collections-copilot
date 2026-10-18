@@ -1,6 +1,7 @@
 "use client";
 
 import { Ban, Clock, Languages } from "lucide-react";
+import { PolicyLink } from "@/components/policy-link";
 import { Badge } from "@/components/ui/badge";
 import type { CallSession } from "@/lib/call-types";
 import { formatMoney } from "@/lib/call-outcomes";
@@ -102,9 +103,7 @@ export function CustomerPanel({ session }: { session: CallSession }) {
               {stop.policy.length > 0 && (
                 <p className="mt-3 flex flex-wrap gap-1.5">
                   {stop.policy.map((p) => (
-                    <span key={p} className="rounded bg-white/15 px-1.5 py-0.5 font-mono text-[0.75rem]">
-                      {p}
-                    </span>
+                    <PolicyLink key={p} text={p} variant="onDark" />
                   ))}
                 </p>
               )}

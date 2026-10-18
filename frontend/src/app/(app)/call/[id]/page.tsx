@@ -13,6 +13,7 @@ import { RoleGate } from "@/components/role-gate";
 import { ErrorState } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LeaveGuardContext } from "@/lib/leave-guard";
 import { EMPTY_OUTCOMES, type CallSession, type CallStage, type ExtractProposal, type Outcomes, type SubmitResponse } from "@/lib/call-types";
 import { applyProposal, canonical } from "@/lib/call-outcomes";
 import { useCallSession } from "@/lib/use-call-session";
@@ -179,9 +180,12 @@ function CallWorkspace({ customerId }: { customerId: string }) {
   const blocked = session.stage === "blocked";
   const blocking = session.wrap_up.blocking.length;
   const ready = session.wrap_up.ready_to_submit;
+  // Outcomes live only in this page, so policy links ask before leaving an unsubmitted call.
+  const unsaved =
+    !submitted && (JSON.stringify(outcomes) !== JSON.stringify(EMPTY_OUTCOMES) || JSON.stringify(drafts) !== JSON.stringify(EMPTY_DRAFTS));
 
   return (
-    <>
+    <LeaveGuardContext.Provider value={unsaved ? "Leave this call? Outcomes you've recorded but not submitted will be lost." : null}>
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <StageRail stage={session.stage} skipTalk={!!outcomes.reached && outcomes.reached !== "customer"} />
         <Updating active={call.loading} />
@@ -283,7 +287,7 @@ function CallWorkspace({ customerId }: { customerId: string }) {
           </Button>
         </div>
       )}
-    </>
+    </LeaveGuardContext.Provider>
   );
 }
 

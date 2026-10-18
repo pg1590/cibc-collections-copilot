@@ -207,3 +207,30 @@ export interface VoiceTranscription {
     processing_seconds: number;
   };
 }
+
+export interface PolicySection {
+  id: string;
+  heading: string;
+  text: string;
+}
+
+export interface PolicyDocument {
+  doc_id: string;
+  title: string;
+  doc_type: string;
+  language: string;
+  version: string;
+  effective_date: string | null;
+  superseded_by: string | null;
+  owner: string | null;
+  file_path: string;
+  sha256: string;
+  current: boolean;
+  preamble: string;
+  sections: PolicySection[];
+}
+
+export interface PolicyLibrary {
+  release: { revision: string | null; verified_against_publisher: boolean } | null;
+  documents: PolicyDocument[];
+}

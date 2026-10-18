@@ -42,7 +42,7 @@ export function Identity({
 
       <div ref={ref} data-shown={shown}>
         {total > 0 ? (
-          <div className="bg-muted flex h-3 w-full overflow-hidden rounded-full" aria-hidden>
+          <div className="bg-seaglass/60 flex h-3 w-full overflow-hidden rounded-full" aria-hidden>
             <div className={cn(styles.bar, "flex h-full w-full")}>
               {segments.map((s) =>
                 s.value > 0 ? <div key={s.key} className={s.color} style={{ width: `${(s.value / total) * 100}%` }} /> : null,

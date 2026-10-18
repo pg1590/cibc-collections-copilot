@@ -66,14 +66,14 @@ export default function OverviewPage() {
   return (
     <div className="space-y-16 sm:space-y-20">
       {/* Chapter 0: greeting and the three numbers that matter most. */}
-      <div className="pt-2">
+      <div className="hero-panel overflow-hidden rounded-[1.75rem] px-6 py-10 text-white sm:px-10 sm:py-12">
         <div className={styles.heroText}>
           <div className="flex items-start justify-between gap-4">
-            <p className="text-muted-foreground text-lg">{greeting()}</p>
+            <p className="text-lg text-white/80">{greeting()}</p>
             <button
               type="button"
               onClick={refresh}
-              className="text-muted-foreground hover:text-foreground hover:bg-paper/70 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35"
+              className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-sm text-white/90 ring-1 ring-white/15 transition-colors outline-none hover:bg-white/18 hover:text-white focus-visible:ring-[3px] focus-visible:ring-white/50"
             >
               <RotateCw className="size-4" aria-hidden /> Refresh
             </button>
@@ -82,7 +82,7 @@ export default function OverviewPage() {
             Here&apos;s where things stand.
           </h1>
           {date && (
-            <p className="text-muted-foreground mt-4 max-w-xl text-[1.0625rem] leading-relaxed">
+            <p className="mt-4 max-w-xl text-[1.0625rem] leading-relaxed text-white/80">
               Counts from the data build as of {date}. Nothing on this page is estimated unless it says so.
             </p>
           )}
@@ -93,7 +93,7 @@ export default function OverviewPage() {
             <div role="status" className="mt-10 grid gap-8 sm:grid-cols-3">
               <span className="sr-only">Loading overview…</span>
               {[0, 1, 2].map((i) => (
-                <Skeleton key={i} className="h-20 rounded-2xl" />
+                <Skeleton key={i} className="h-20 rounded-2xl bg-white/15" />
               ))}
             </div>
           ) : overview.error ? (
@@ -113,10 +113,10 @@ export default function OverviewPage() {
           ) : (
             data && (
               <>
-                <dl className="mt-10 grid gap-8 sm:grid-cols-3">
+                <dl className="mt-10 grid gap-8 sm:grid-cols-3 sm:gap-0 sm:divide-x sm:divide-white/15">
                   {headline.map((h) => (
-                    <div key={h.label} className="flex flex-col-reverse">
-                      <dt className="text-muted-foreground mt-3 text-[1.0625rem]">{h.label}</dt>
+                    <div key={h.label} className="flex flex-col-reverse sm:px-8 sm:first:pl-0">
+                      <dt className="mt-3 text-[1.0625rem] text-white/80">{h.label}</dt>
                       <dd className="text-[3rem] leading-none tracking-[-0.03em] tabular-nums sm:text-[3.5rem] lg:text-[4.25rem]" title={h.full}>
                         {h.value}
                       </dd>
@@ -126,7 +126,7 @@ export default function OverviewPage() {
                 {data.pending_reviews > 0 && canSee(role, "reviews") && (
                   <Link
                     href="/reviews"
-                    className="bg-review-soft text-review-foreground hover:bg-review-soft/70 mt-8 inline-flex items-center gap-2.5 rounded-full px-4 py-2 text-[0.9375rem] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35"
+                    className="bg-review-soft text-review-foreground mt-8 inline-flex items-center gap-2.5 rounded-full px-4 py-2 text-[0.9375rem] font-medium shadow-[0_8px_24px_-12px_rgb(0_0_0/0.35)] outline-none hover:bg-white focus-visible:ring-[3px] focus-visible:ring-white/50"
                   >
                     <span className="bg-review size-2 rounded-full" aria-hidden />
                     {yours

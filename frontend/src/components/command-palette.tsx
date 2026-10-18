@@ -18,6 +18,7 @@ const PAGES: { label: string; href: string; section: Section; hint: string }[] =
   { label: "Agent brief", href: "/briefs", section: "briefs", hint: "What to do, in order" },
   { label: "Supervisor review", href: "/reviews", section: "reviews", hint: "Approve, edit or reject" },
   { label: "Data & features", href: "/quality", section: "quality", hint: "Quality, features, model" },
+  { label: "Policies", href: "/policies", section: "policies", hint: "Official policy and procedure text" },
 ];
 
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {

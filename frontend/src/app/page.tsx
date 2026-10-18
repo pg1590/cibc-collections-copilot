@@ -132,18 +132,18 @@ export default function WelcomePage() {
   return (
     <div
       data-phase={phase}
-      className={cn(styles.root, "font-humane bg-mist text-ink-soft min-h-dvh")}
+      className={cn(styles.root, "font-humane text-ink-soft min-h-dvh")}
       style={{ "--dx": `${offset.dx}px`, "--dy": `${offset.dy}px` } as React.CSSProperties}
     >
       <header className={cn(styles.reveal, "site-bar")}>
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 sm:px-8">
-          <Link href="/" className="focus-visible:ring-primary/40 flex items-center gap-2.5 rounded-lg outline-none focus-visible:ring-[3px]">
-            <BrandMark />
+          <Link href="/" className="flex items-center gap-2.5 rounded-lg outline-none focus-visible:ring-[3px] focus-visible:ring-chrome-accent/60">
+            <BrandMark tone="dark" />
             <span className="text-[1.0625rem] font-medium">Collections Copilot</span>
           </Link>
           <Link
             href={signedIn ? "/overview" : "/login"}
-            className="text-primary hover:bg-seaglass/60 focus-visible:ring-primary/40 rounded-full px-4 py-2 text-[0.9375rem] font-medium outline-none focus-visible:ring-[3px]"
+            className="bg-chrome-accent text-chrome hover:bg-chrome-accent/90 rounded-full px-4 py-2 text-[0.9375rem] font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-chrome-accent/60"
           >
             {signedIn ? "Open workspace" : "Sign in"}
           </Link>
