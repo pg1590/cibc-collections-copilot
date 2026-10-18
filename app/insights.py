@@ -14,7 +14,7 @@ from pathlib import Path
 import duckdb
 from rank_bm25 import BM25Okapi
 from app.settings import SNAPSHOT
-from app.metric_plans import CATALOG, PlanError, PlanRefusal, compile_plan
+from app.metric_plans import AMOUNT_METRICS, CATALOG, PlanError, PlanRefusal, amount_text, compile_plan, dpd_text
 from app.gemini import ProviderUnavailable
 from app.policy_summary import STOP, summarize_policy, summarize_transcript
 from app.features import normalize_text
@@ -56,6 +56,82 @@ def province_filter(q):
     if provinces and re.search(r'\b(?:excluding|exclude|except|outside|without|other than|apart from|not in|not from)\b',q):
         raise PlanError('Province exclusions are unsupported. Request one included province or a supported grouping.')
     return {'province':provinces.pop()} if provinces else {}
+
+
+AMOUNT_OPS={'more than':'>','greater than':'>','in excess of':'>','exceeding':'>','exceeds':'>','over':'>','above':'>','>':'>',
+            'at least':'>=','no less than':'>=','minimum of':'>=','>=':'>=',
+            'less than':'<','fewer than':'<','under':'<','below':'<','<':'<',
+            'at most':'<=','no more than':'<=','up to':'<=','maximum of':'<=','<=':'<='}
+_OP=r'(?P<op>'+'|'.join(re.escape(k) for k in sorted(AMOUNT_OPS,key=len,reverse=True))+r')'
+_MONEY=r'(?P<cur1>\$|cad\s*)?\s*(?P<num>\d[\d,]*(?:\.\d+)?)\s*(?P<mult>k\b|thousand\b)?\s*(?P<cur2>dollars?\b|cad\b|\$)?'
+AMOUNT_PREFIX=re.compile(_OP+r'\s*(?:of\s+)?'+_MONEY)
+AMOUNT_SUFFIX=re.compile(_MONEY+r'\s+or\s+(?P<word>more|above|greater|higher|less|below|lower|fewer)\b')
+MONEY_CONTEXT=re.compile(r'\b(?:overdue|owe|owes|owing|owed|balances?|debts?|amounts?|money|outstanding|arrears)\b')
+NOT_MONEY=re.compile(r'\b(?:days?|dpd|weeks?|months?|years?|hours?|minutes?|times?|attempts?|calls?|contacts?|promises?|ptps?|cases?|customers?|clients?|agents?|accounts?|notes?|percent|pct)\b|%')
+AMOUNT_HELP=('Amount thresholds work on current open cases: customers by their total overdue, or open-case counts, overdue totals and average days past due by each case\'s overdue. '
+             'For example: "How many customers have more than $800 overdue?" or "How many open cases have at least $1,000 overdue, by province?"')
+
+
+def _amount_matches(q):
+    """Dollar thresholds in a question, with their spans; counts like "over 90 days" are not money."""
+    found=[]
+    for regex in (AMOUNT_PREFIX,AMOUNT_SUFFIX):
+        for m in regex.finditer(q):
+            explicit=bool(m['cur1'] or m['cur2'] or m['mult'])
+            # The two words after the amount decide whether it is money: "over 90 days" is not.
+            following=' '.join(re.findall(r'[a-z%]+',q[m.end():])[:2]) if not m.groupdict().get('word') else ' '.join(re.findall(r'[a-z%]+',q[m.end('num'):])[:2])
+            if NOT_MONEY.search(following) and not explicit:continue
+            if not explicit and not MONEY_CONTEXT.search(q):continue
+            value=float(m['num'].replace(',',''))*(1000 if m['mult'] else 1)
+            op=AMOUNT_OPS[m['op']] if m.groupdict().get('op') else ('>=' if m['word'] in ('more','above','greater','higher') else '<=')
+            found.append((m.start(),m.end(),{'op':op,'value':int(value) if value.is_integer() else value}))
+    found.sort(key=lambda f:f[0])
+    return [f for i,f in enumerate(found) if not any(f[0]<g[1] and g[0]<f[1] for g in found[:i])]
+
+
+def amount_threshold(q):
+    """One overdue-amount threshold, or {}. Ranges and several thresholds need clarification."""
+    matches=_amount_matches(q)
+    if re.search(r'\bbetween\s+(?:\$|cad\s*)\d|\bbetween\s+\d[\d,.]*\s*(?:k\b|thousand\b|dollars?\b|cad\b)',q):
+        raise PlanError('Amount ranges are not supported; use one threshold such as "more than $500". '+AMOUNT_HELP)
+    if len(matches)>1:raise PlanError('Use one amount threshold per question. '+AMOUNT_HELP)
+    return matches[0][2] if matches else {}
+
+
+_DPD_UNIT=r'(?:days?\s+(?:past\s+due|overdue|late|delinquent|in\s+arrears)|dpd)\b'
+DPD_PREFIX=re.compile(_OP+r'\s*(?P<num>\d{1,5})\s*\+?\s*'+_DPD_UNIT)
+DPD_SUFFIX=re.compile(r'(?P<num>\d{1,5})\s*(?:\+|\s+or\s+(?P<word>more|above|higher|less|below|fewer))\s*'+_DPD_UNIT)
+COMPARISON=re.compile(_OP+r'\s*(?:of\s+)?(?:\$|cad\s*)?\d|\d\s*\+\s*[a-z]|\d+\s+or\s+(?:more|above|higher|less|below|fewer)\b')
+DPD_HELP=('Days-past-due thresholds work on current open cases: counts, overdue totals and average days past due. '
+          'For example: "How many open cases are more than 90 days past due?"')
+OTHER_COMPARISON=('That question has a numeric condition I cannot apply yet. I can apply one overdue-amount threshold (for example "more than $800 overdue") '
+                  'and one days-past-due threshold (for example "over 90 days past due") on current open cases; other conditions need a reviewed cohort.')
+
+
+def _dpd_matches(q):
+    found=[]
+    for regex in (DPD_PREFIX,DPD_SUFFIX):
+        for m in regex.finditer(q):
+            groups=m.groupdict()
+            op=AMOUNT_OPS[groups['op']] if groups.get('op') else ('<=' if groups.get('word') in ('less','below','fewer') else '>=')
+            found.append((m.start(),m.end(),{'op':op,'value':int(m['num'])}))
+    return sorted(found,key=lambda f:f[0])
+
+
+def dpd_threshold(q):
+    """One days-past-due threshold, or {}. "1 or more days past due" in a share/delinquency question is the delinquency definition itself."""
+    matches=_dpd_matches(q)
+    if len(matches)==1 and matches[0][2]=={'op':'>=','value':1} and re.search(r'delinquen|\bshare\b|\bcard accounts?\b',q):return {}
+    if len(matches)>1:raise PlanError('Use one days-past-due threshold per question. '+DPD_HELP)
+    return matches[0][2] if matches else {}
+
+
+def unhandled_comparison(q):
+    """A numeric condition that neither the amount nor the days-past-due threshold covers."""
+    covered=[(a,b) for a,b,_ in _amount_matches(q)+_dpd_matches(q)]
+    if not dpd_threshold(q) and re.search(r'delinquen|\bshare\b|\bcard accounts?\b',q):
+        covered+=[(a,b) for a,b,_ in _dpd_matches(q)]
+    return any(not any(a<=m.start()<b for a,b in covered) for m in COMPARISON.finditer(q))
 
 
 def tokens(text):return re.findall(r'[a-z0-9]+',text.lower())
@@ -503,12 +579,16 @@ def _summarize(rows,meta,refused=None,clarification=None):
             label,unit,value_column,good,_=METRIC_INFO[metric];period=period_label(meta,metric)
             if metric=='open_insolvency_cases' and value_column not in columns:value_column='overdue_cad'
             if value_column not in columns:value_column=columns[1 if grouping!='none' else 0]
-        province=(meta.get('filters') or {}).get('province');site=(meta.get('filters') or {}).get('site')
+        province=(meta.get('filters') or {}).get('province');site=(meta.get('filters') or {}).get('site');amount=(meta.get('filters') or {}).get('overdue');days=(meta.get('filters') or {}).get('dpd')
         region=f' in {PROVINCE_LABELS.get(province,province)}' if province else f' at the {site} site' if site else ''
+        if days:region+=f' {dpd_text(days)}'
+        if amount and kind!='count':region+=f' with {amount_text(amount)} overdue each'
+        if amount and kind=='count' and metric=='customers_with_open_cases':label=f'customers with {amount_text(amount)} overdue'
         if grouping=='none':
             row=rows[0];value=_value(row.get(value_column),unit);count,_n=_count_text(row,columns,value_column)
             if kind=='count':
                 if metric=='agents':return f"{_num(row['active_agents'])} agents{region} are active, out of {_num(row['agent_records'])} agent records {period}."
+                if metric=='customers_with_open_cases' and amount:return f'{value} customers{region} have {amount_text(amount)} overdue in total on their open collections cases {period}.'
                 if metric=='customers_with_open_cases':return f'{value} customers{region} have at least one open collections case {period}.'
                 return f'There are {value} customers{region} in the resolved C360 customer table {period}.'
             if metric=='open_insolvency_cases':return f"There are {_num(row.get('open_cases'))} open cases on insolvency hold{region} {period}, with {_value(row.get('overdue_cad'),'cad')} overdue."
@@ -707,9 +787,16 @@ class InsightEngine:
     def _verify(plan,q,rank=None):
         """A plan must preserve the requested metric cohort, province, period, grouping and ranking."""
         meta=getattr(plan,'metadata',None) or {}
+        wanted_amount=amount_threshold(q)
+        if wanted_amount and (meta.get('filters') or {}).get('overdue')!=wanted_amount:
+            raise PlanError(AMOUNT_HELP)
+        wanted_dpd=dpd_threshold(q)
+        if wanted_dpd and (meta.get('filters') or {}).get('dpd')!=wanted_dpd:
+            raise PlanError(DPD_HELP)
+        if unhandled_comparison(q):raise PlanError(OTHER_COMPARISON)
         if meta and 'kind' not in meta:
             _cohort_guards(q,meta['metric_id'])
-            if meta.get('filters',{})!=province_filter(q):
+            if {k:v for k,v in (meta.get('filters') or {}).items() if k=='province'}!=province_filter(q):
                 raise PlanError('The validated plan does not preserve the requested province; please clarify the cohort.')
             if explicit_period(q):
                 wanted=trend_range(q) if meta['grouping']=='month' else date_range(q)
@@ -896,6 +983,13 @@ class InsightEngine:
         if metric is None:return None
         _cohort_guards(q,metric)
         filters=province_filter(q)
+        amount=amount_threshold(q);days=dpd_threshold(q)
+        if amount:
+            if metric not in AMOUNT_METRICS:raise PlanError(AMOUNT_HELP)
+            filters={**filters,'overdue':amount}
+        if days:
+            if metric not in AMOUNT_METRICS:raise PlanError(DPD_HELP)
+            filters={**filters,'dpd':days}
         grouping=force_grouping or 'none'
         grouping_question=re.sub(r'\bby\s+(?:sms|text(?: messages?)?)\b','via SMS',q) if metric=='sms_payment_link_click_share' else q
         found=None if force_grouping else requested_dimensions(grouping_question)
@@ -918,13 +1012,18 @@ class InsightEngine:
         target=re.search(r'\b(?:how many|number of|count of|total number of|total)\s+(?:(?:active|distinct|unique|current|existing|collections?|our|the|of|individual|resolved)\s+){0,3}(customers?|clients?|borrowers?|agents?|collectors?)\b',q)
         if not target or template_cohort(q):return None
         agents=target[1].startswith(('agent','collector'))
+        amount=amount_threshold(q)
+        if amount and agents:raise PlanError('Amount thresholds apply to customers and cases, not agents. '+AMOUNT_HELP)
+        if dpd_threshold(q):raise PlanError('Days-past-due thresholds apply to open cases, not customer counts. '+DPD_HELP)
         text=q.replace(SNAPSHOT,' ')
+        for begin,finish,_ in reversed(_amount_matches(text)):text=text[:begin]+' '+text[finish:]
         for name in sorted(PROVINCE_NAMES,key=len,reverse=True):text=re.sub(r'\b'+name+r'\b',' ',text)
         allowed=set('how many number of count total the a an are is there do does we have has had in our with at least one currently today now right as on bank maple portfolio overall all distinct unique by each per across altogether what s exist existing individual resolved c360 there'.split())
         if agents:
             allowed|=set('agents agent collectors collector active working work employed site sites role roles'.split())|{x for s in SITES for x in tokens(s)}
         else:
             allowed|=set('customers customer clients client borrowers borrower open case cases collection collections province provinces'.split())|{c.lower() for c in PROVINCES}
+            if amount:allowed|=set('overdue owe owes owing owed money balance balances debt debts amount outstanding arrears total in of more than dollars dollar cad who whose that which their'.split())
         extra=[w for w in tokens(text) if w not in allowed]
         if extra:
             raise PlanError('I can count customers (overall, in one province, by province, or those with open cases) and agents (overall, at one site, by site or by role). That extra condition is not a reviewed count filter.')
@@ -941,16 +1040,20 @@ class InsightEngine:
             return Plan(sql,params,'Agent records from curated.agents; active means status=active (inactive records include terminated staff and leave).',meta)
         filters=province_filter(q)
         if dims and dims!=['province']:raise PlanError('Customer counts support grouping by province only.')
-        open_cases=bool(re.search(r'\bopen\b|\bin\s+collections?\b',q))
+        open_cases=bool(amount) or bool(re.search(r'\bopen\b|\bin\s+collections?\b',q))
         table,column=('gold.customer_summary','customers_with_open_cases') if open_cases else ('gold.customers','customers')
         where=['open_cases>0'] if open_cases else []
-        if filters:where.append(CUSTOMER_PROVINCE+'=?')
+        params=[]
+        if amount:
+            where.append('total_overdue'+{'>':'>','>=':'>=','<':'<','<=':'<='}[amount['op']]+'?');params.append(amount['value'])
+        if filters:where.append(CUSTOMER_PROVINCE+'=?');params.append(filters['province'])
         group=dims==['province']
         sql=f"SELECT {CUSTOMER_PROVINCE+' AS province, ' if group else ''}count(*) {column} FROM {table}"+(' WHERE '+' AND '.join(where) if where else '')+(' GROUP BY 1 ORDER BY 1' if group else '')
         note='Resolved C360 customers (gold.customers, one row per customer after identity matching).' if not open_cases else 'Customers with at least one open collections case in the C360 summary (gold.customer_summary.open_cases>0); open cases without a resolved identity are not counted.'
+        if amount:note+=f' Limited to customers whose total overdue across their open cases (gold.customer_summary.total_overdue) is {amount_text(amount)}.'
         if filters or group:note+=" Province comes from the customer profile, normalized from source variants such as 'Ont.' and 'PQ'; missing provinces are 'unknown'."
-        meta={'kind':'count','metric_id':column,'grouping':'province' if group else 'none','filters':filters}
-        return Plan(sql,[filters['province']] if filters else [],note,meta)
+        meta={'kind':'count','metric_id':column,'grouping':'province' if group else 'none','filters':{**filters,**({'overdue':amount} if amount else {})}}
+        return Plan(sql,params,note,meta)
 
     def _promise_count_plan(self,q):
         """How many promises due in a period were broken/kept, with the resolved denominator and rate."""

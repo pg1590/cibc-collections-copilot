@@ -34,6 +34,21 @@ RESOLVED = "('kept','partially_kept','broken')"
 PROVINCES = frozenset("AB BC MB NB NL NS NT NU ON PE QC SK YT".split())
 PROVINCE_FILTER = 'Optional single filter {"province": "<two-letter code>"} on the collections case province; records without a linked case are excluded.'
 NO_FILTER = "No custom filters supported."
+# An overdue-amount threshold applies to the current open-case measures only; the operator is
+# mapped to a constant and the amount is a bound parameter.
+AMOUNT_OPS = {">": ">", ">=": ">=", "<": "<", "<=": "<="}
+AMOUNT_WORDS = {">": "more than", ">=": "at least", "<": "less than", "<=": "at most"}
+AMOUNT_METRICS = ("open_cases", "open_overdue_amount", "open_hardship_cases", "open_insolvency_cases", "average_dpd")
+
+
+def dpd_text(dpd):
+    return f"{AMOUNT_WORDS[dpd['op']]} {dpd['value']:,} days past due"
+
+
+def amount_text(overdue):
+    value = overdue["value"]
+    shown = f"{value:,.0f}" if float(value).is_integer() else f"{value:,.2f}"
+    return f"{AMOUNT_WORDS[overdue['op']]} ${shown}"
 
 
 def _entry(description, groupings, time_basis, denominator, filters=PROVINCE_FILTER, **extra):
@@ -84,8 +99,16 @@ def _validate(spec):
     if not isinstance(spec, dict) or set(spec) - _ALLOWED:
         raise PlanError("The metric plan contains unsupported fields.")
     filters = spec.get("filters", {})
-    if not isinstance(filters, dict) or set(filters) - {"province"}:
-        raise PlanError("Custom filters other than a single province are unsupported; please clarify the required cohort.")
+    if not isinstance(filters, dict) or set(filters) - {"province", "overdue", "dpd"}:
+        raise PlanError("Custom filters other than a single province, an overdue-amount threshold or a days-past-due threshold are unsupported; please clarify the required cohort.")
+    dpd = filters.get("dpd")
+    if "dpd" in filters and (not isinstance(dpd, dict) or set(dpd) != {"op", "value"} or dpd["op"] not in AMOUNT_OPS
+                             or isinstance(dpd["value"], bool) or not isinstance(dpd["value"], int) or not 0 <= dpd["value"] <= 10000):
+        raise PlanError("A days-past-due threshold needs one comparison (more than, at least, less than or at most) and a whole number of days.")
+    overdue = filters.get("overdue")
+    if "overdue" in filters and (not isinstance(overdue, dict) or set(overdue) != {"op", "value"} or overdue["op"] not in AMOUNT_OPS
+                                 or isinstance(overdue["value"], bool) or not isinstance(overdue["value"], (int, float)) or not 0 <= overdue["value"] <= 1e9):
+        raise PlanError("An overdue-amount threshold needs one comparison (more than, at least, less than or at most) and a dollar amount.")
     province = filters.get("province")
     if "province" in filters and (not isinstance(province, str) or province not in PROVINCES):
         raise PlanError("The province filter must be a two-letter Canadian province or territory code.")
@@ -121,7 +144,9 @@ def _validate(spec):
         raise PlanError("Cure rate uses calendar-month cohorts; specify whole months or the current month to the snapshot.")
     if province and CATALOG[metric]["filters"] == NO_FILTER:
         raise PlanError(f"{metric} has no reviewed province source; request it without a province filter or by a supported grouping.")
-    return metric, grouping, start, end, province
+    if (overdue or dpd) and metric not in AMOUNT_METRICS:
+        raise PlanError("Amount and days-past-due thresholds apply to current open cases: counts, overdue totals and average days past due. Ask one of those with the threshold.")
+    return metric, grouping, start, end, province, overdue, dpd
 
 
 def _select(group, metric_expr, counts, table, where):
@@ -132,7 +157,7 @@ def _select(group, metric_expr, counts, table, where):
 
 
 def compile_plan(spec: dict) -> CompiledPlan:
-    metric, grouping, start, end, province = _validate(spec)
+    metric, grouping, start, end, province, overdue, dpd = _validate(spec)
     params = [start, end]
     # Province is a whitelisted code bound as a parameter, matched on the linked case.
     region = " AND c.province_code=?" if province else ""
@@ -198,6 +223,14 @@ def compile_plan(spec: dict) -> CompiledPlan:
             expr, count, where = "count(*) open_cases", None, "c.outcome IS NULL"
             params = []
             note = f"Open means no recorded outcome at {SNAPSHOT}. Source bucket labels are retained; discrepancies are reported in data quality."
+        if overdue:
+            where += f" AND c.total_overdue{AMOUNT_OPS[overdue['op']]}?"
+            params = [*params, overdue["value"]]
+            note += f" Limited to open cases whose own recorded total_overdue is {amount_text(overdue)} (per case, not summed per customer); cases with no recorded amount are excluded."
+        if dpd:
+            where += f" AND c.current_dpd{AMOUNT_OPS[dpd['op']]}?"
+            params = [*params, dpd["value"]]
+            note += f" Limited to open cases {dpd_text(dpd)} (recorded current_dpd); cases with no recorded DPD are excluded."
         month = {"hardship_rate": "c.case_open_date", "average_days_to_cure": "c.cure_date"}.get(metric)
         sql = _select((f"strftime({month},'%Y-%m')", "month") if grouping == "month" else case_groups[grouping], expr, count, "curated.collections_cases c", where + region)
         if metric == "cure_rate" and grouping == "month":
@@ -231,8 +264,10 @@ def compile_plan(spec: dict) -> CompiledPlan:
         note += " Months (YYYY-MM) follow the metric's own time basis; edge months cover only the part inside the period."
     definition = "schema/schema.json; reviewed application extension" if CATALOG[metric].get("extension") else "data/metric_definitions.csv"
     metadata = {"metric_id": metric, "grouping": grouping, "start_date": start.isoformat(), "end_date": end.isoformat(), "definition_source": definition, "denominator": CATALOG[metric]["denominator"]}
+    if overdue or dpd:
+        metadata["filters"] = {**({"overdue": dict(overdue)} if overdue else {}), **({"dpd": dict(dpd)} if dpd else {})}
     if province:
         params = [*params, province]
-        metadata["filters"] = {"province": province}
+        metadata["filters"] = {"province": province, **metadata.get("filters", {})}
         note += f" Filtered to province {province} using the collections case province_code; records without a linked case are excluded."
     return CompiledPlan(sql, params, note, metadata)
