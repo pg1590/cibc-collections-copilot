@@ -1,11 +1,11 @@
 # Final presentation: 15-minute script
 
-Four parts, one per speaker, in this order: **Krish** opens with the problem, **Prakhar** explains how we decided and shows the proof, **Aryan** runs the live demo, **Ved** closes. The deck is ordered the same way, so nobody skips slides. The script runs about 14:30, leaving 30 seconds of buffer. The slides are `presentation/AddaWale-Finals-Presentation.pdf` (16 slides; printable copies of this script and the demo script are in the same folder); the app runs at http://127.0.0.1:3000.
+Four parts, one per speaker, in this order: **Prakhar** opens with the problem, **Krish** explains how we decided and shows the proof, **Aryan** runs the live demo, **Ved** closes. The deck is ordered the same way, so nobody skips slides. The script runs about 14:30, leaving 30 seconds of buffer. The slides are `presentation/AddaWale-Finals-Presentation.pdf` (16 slides; printable copies of this script and the demo script are in the same folder); the app runs at http://127.0.0.1:3000.
 
 | Starts | Part and speaker | Slides / screen |
 |---|---|---|
-| 0:00 | **Part 1. The problem**, Krish (3:15) | Slides 1-3, then the live Overview and Work queue |
-| 3:15 | **Part 2. How we decided, and the proof**, Prakhar (5:00) | Slides 4-9 |
+| 0:00 | **Part 1. The problem**, Prakhar (3:15) | Slides 1-3, then the live Overview and Work queue |
+| 3:15 | **Part 2. How we decided, and the proof**, Krish (5:00) | Slides 4-9 |
 | 8:15 | **Part 3. Live demo**, Aryan (5:15) | Live app: customer page, Call Mode, blocked customer, supervisor review |
 | 13:30 | **Part 4. Close**, Ved (1:00) | Slides 10-11 |
 
@@ -21,20 +21,20 @@ Speak at a calm pace. Words in **bold** in the "Do" column are buttons or screen
 4. Keep the call note in a text file ready to paste: `Customer lost his job last month. He can pay $315.86 on October 15. Asked us to call back next week.`
 5. Rehearse the Overview scroll: **What's at stake** shows one big number at a time and changes as you scroll ($69.8M, then $18.0M, then $338.6K). Scroll slowly.
 
-## Part 1: The problem (Krish, 3:15)
+## Part 1: The problem (Prakhar, 3:15)
 
 | Time | Do | Say |
 |---|---|---|
-| 0:00 | Slide 1 (cover) | "Good morning. We're Adda Wale: Prakhar, Aryan, Ved and I'm Krish. We built Collections Copilot: it tells a bank's collections agent what to do with each overdue customer, in the right order, within policy, with the reason shown." |
+| 0:00 | Slide 1 (cover) | "Good morning. We're Adda Wale: Krish, Aryan, Ved and I'm Prakhar. We built Collections Copilot: it tells a bank's collections agent what to do with each overdue customer, in the right order, within policy, with the reason shown." |
 | 0:20 | Slide 2 | "Collections means calling customers who already owe the bank money. It isn't sales. Before every call, an agent has to check eight things: restrictions like bankruptcy, whether a lawyer represents the customer, disputes, vulnerability, hardship, an existing promise to pay, when contact is legal, and only then the payment request. The facts sit in different systems and the rules in 19 policy documents. Miss one, and it's a breach or a harmed customer." |
 | 1:00 | Slide 3 | "So we ran those checks across all 96,000 open cases in the data. 760 cases were contacted more often than the rules allow this week. 1,040 contacts happened outside legal hours or on a holiday. And 18,758 customers in financial hardship have no support plan yet. Each of these numbers is one SQL query, and you can see it in the app. Let me show you." |
 | 1:35 | Alt+Tab to the browser, **Overview**. Open **Definition and SQL** on *Cases contacted more often than allowed* | "This is the manager's view. Every tile opens its definition and the exact query, so nobody has to trust our numbers." |
 | 1:55 | Scroll slowly through **What's at stake**; pause on each number | "And the money behind it: $69.8 million exposed on cases about to be written off; $18 million owed by customers in hardship with no plan; $338 thousand spent on contacts in the last 30 days." |
 | 2:30 | Scroll to **Today's first step** | "Every night we plan every open case. Fewer than half should simply be asked to pay; the rest need something else first: a reminder, a hardship offer, or no contact at all." |
 | 2:50 | Click **Work queue** | "And this is one agent's day: 296 cases in a fixed order, not a black-box score. Each row says why it's there and when the agent may legally call next." |
-| 3:05 | Alt+Tab back to the slides, slide 4 | "Before we show the product, Prakhar will explain how we decided what to build, and why." |
+| 3:05 | Alt+Tab back to the slides, slide 4 | "Before we show the product, Krish will explain how we decided what to build, and why." |
 
-## Part 2: How we decided, and the proof (Prakhar, 5:00)
+## Part 2: How we decided, and the proof (Krish, 5:00)
 
 | Time | Do | Say |
 |---|---|---|
@@ -86,9 +86,9 @@ The person named first answers; the others add only if needed. Full answers are 
 
 | First | Backup | Topic |
 |---|---|---|
-| Prakhar | Aryan | Architecture, model and LLM choice, scale, new data |
+| Krish | Prakhar | Architecture, model and LLM choice, scale, new data |
 | Aryan | Prakhar | The screens, Call Mode, the redesign, Customer 360 and identity matching |
-| Krish | Prakhar | The numbers on the Overview, Ask Collections, data quality |
+| Prakhar | Krish | The numbers on the Overview, Ask Collections, data quality |
 | Ved | Krish | "Does the app contact customers?" and "Is this real data?" |
 
 Ved's two answers, word for word:
