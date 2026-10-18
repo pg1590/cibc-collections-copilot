@@ -113,6 +113,16 @@ for (const viewport of [{ width: 1440, height: 1000, tag: "desktop" }, { width: 
     return (await summary.textContent()) ?? "";
   }
   const ranking = await ask("Which province has the highest promise-kept rate in August 2026?");
+  {
+    // Enter alone asks, and the asked question stays in the box for editing.
+    const box = page.locator("#question");
+    await box.fill("How many open cases are over 90 days past due?");
+    await box.press("Enter");
+    const answered = page.locator('[aria-label="Answer summary"]').first();
+    await page.waitForFunction(() => /90 days past due/.test(document.querySelector('[aria-label="Answer summary"]')?.textContent ?? ""), null, { timeout: 90000 }).catch(() => {});
+    check(`${v}: Enter asks the question`, /90 days past due/.test((await answered.textContent()) ?? ""));
+    check(`${v}: asked question stays in the box`, (await box.inputValue()) === "How many open cases are over 90 days past due?");
+  }
   check(`${v}: ask ranking leads with a summary`, /highest promise-kept rate in August 2026/.test(ranking), ranking.slice(0, 90));
   if (v === "desktop") {
     await page.addStyleTag({ content: "header.sticky { position: static !important; }" });

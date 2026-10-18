@@ -173,12 +173,13 @@ export default function AskPage() {
   async function submit(asked?: string) {
     const text = (asked ?? question).trim();
     if (!text || pending) return;
+    // The asked question stays in the box so it can be edited and asked again.
+    if (asked !== undefined) setQuestion(text);
     setPending(true);
     setError(null);
     try {
       const result = await api<AskResponse>("/ask", { method: "POST", body: JSON.stringify({ question: text }) });
       setHistory((h) => [{ question: text, result }, ...h]);
-      if (asked === undefined) setQuestion("");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -208,7 +209,8 @@ export default function AskPage() {
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              // Enter asks; Shift + Enter adds a line; never mid-composition (accents, IME input).
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 void submit();
               }
@@ -217,7 +219,7 @@ export default function AskPage() {
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p id="question-help" className="text-muted-foreground text-xs">
-              Press Ctrl + Enter to send. Calculations use reviewed definitions, and each answer shows its evidence.
+              Press Enter to ask, Shift + Enter for a new line. Calculations use reviewed definitions, and each answer shows its evidence.
             </p>
             <Button type="submit" disabled={pending || !question.trim()}>
               {pending ? <Loader2 className="animate-spin" aria-hidden /> : <Send aria-hidden />}
