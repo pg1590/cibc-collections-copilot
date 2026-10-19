@@ -625,10 +625,15 @@ def _summarize(rows,meta,refused=None,clarification=None):
         if days:region+=f' {dpd_text(days)}'
         if amount and kind!='count':region+=f' with {amount_text(amount)} overdue each'
         if amount and kind=='count' and metric=='customers_with_open_cases':label=f'customers with {amount_text(amount)} overdue'
+        status=(meta.get('filters') or {}).get('status');city=(meta.get('filters') or {}).get('city')
+        if city:region=f' in {city}'+region
+        if status and kind=='count':label=CUSTOMER_STATUS[status][2]+(' with open cases' if metric=='customers_with_open_cases' else '')
         if grouping=='none':
             row=rows[0];value=_value(row.get(value_column),unit);count,_n=_count_text(row,columns,value_column)
             if kind=='count':
                 if metric=='agents':return f"{_num(row['active_agents'])} agents{region} are active, out of {_num(row['agent_records'])} agent records {period}."
+                if status:return f"{value} customers{region}{' with open cases' if metric=='customers_with_open_cases' else ''}{' owing '+amount_text(amount) if amount else ''} {CUSTOMER_STATUS[status][3]} {period}."
+                if city and metric=='customers':return f'{value} customers live in {city}{region[len(" in "+city):]} {period}.'
                 if metric=='customers_with_open_cases' and amount:return f'{value} customers{region} have {amount_text(amount)} overdue in total on their open collections cases {period}.'
                 if metric=='customers_with_open_cases':return f'{value} customers{region} have at least one open collections case {period}.'
                 return f'There are {value} customers{region} in the resolved C360 customer table {period}.'
@@ -687,6 +692,51 @@ PROGRAMME_PRODUCTS=[(r'credit cards?|\bcards?\b',['card']),(r'personal loans?',[
 PRODUCT_LABELS={'card':'cards','personal_loan':'personal loans','auto_loan':'auto loans','loc':'lines of credit','mortgage':'mortgages','overdraft':'overdrafts'}
 WORK_QUEUE=r'\b(?:which|what)\s+(?:\w+\s+)?(?:customers|accounts|cases|clients|borrowers|debtors)\b.*\b(?:call|contact|phone|prioriti[sz]\w*|chase|work|reach)\w*\b|\bwho\s+(?:should|do|must|to)\s+(?:we\s+|i\s+)?(?:call|contact|prioriti[sz]e|chase|phone|work)\b|(?<!not )\b(?:call|contact|work)\s+(?:list|order)\b'
 WORK_QUEUE_SUGGESTIONS=['How many open cases are there by bucket?','How many open cases have recorded hardship by queue?','What is the average days past due of open cases by queue?']
+# Customer counts by recorded status (gold.customers flags) and by city (curated.customers.city).
+CUSTOMER_STATUS={
+    'insolvent':(r'\binsolven(?:t|cy|cies)\b','(g.bankruptcy_flag OR g.consumer_proposal_flag)','insolvent customers (bankruptcy or consumer proposal)','have a bankruptcy or consumer proposal recorded'),
+    'bankrupt':(r'\bbankrupt(?:cy|cies)?\b','g.bankruptcy_flag','bankrupt customers','are recorded as bankrupt'),
+    'consumer_proposal':(r'\bconsumer proposals?\b','g.consumer_proposal_flag','customers with a consumer proposal','have filed a consumer proposal'),
+    'deceased':(r'\bdeceased\b|\bdied\b|\bdead\b','g.deceased_flag','customers recorded as deceased','are recorded as deceased'),
+    'cease':(r'\bcease[ds]?\b|\bstop(?:ped)?\s+(?:contact|contacting|calling)\b|\basked us to stop\b','g.cease_communication_flag','customers who asked us to stop contact','have asked us to stop contacting them'),
+}
+CITY_NORMAL="regexp_replace(lower(strip_accents(trim(c.city))),'[.'']','','g')"
+CITY_EXCLUDED=frozenset({'hope','port','olds','quebec'})  # everyday words, and the province
+SMALL_CELL=10  # counts below this for one city are shown as "fewer than 10"
+PEOPLE_WORDS=r'people|persons|individuals|debtors'
+
+
+def _plain(text):
+    import unicodedata
+    return re.sub(r"[.']",'',''.join(ch for ch in unicodedata.normalize('NFKD',text.lower()) if not unicodedata.combining(ch)))
+
+
+def customer_status(q):
+    found={key for key,(pattern,*_) in CUSTOMER_STATUS.items() if re.search(pattern,q)}
+    if found and found<={'insolvent','bankrupt','consumer_proposal'} and (len(found)>1):found={'insolvent'}  # "bankrupt or in a consumer proposal" is insolvency
+    found=sorted(found)
+    if len(found)>1:raise PlanError('Ask about one customer status at a time: bankrupt, consumer proposal, insolvent (either), deceased, or asked to stop contact.')
+    return found[0] if found else None
+
+
+# Follow-ups after an answer. Policy sections lead to neighbouring rules and the data behind them.
+POLICY_FOLLOWUPS={
+    '§5.1':('During what hours may we make collection calls, and what applies on Sundays?','What share of outbound calls in September 2026 were outside permitted calling hours, by customer province?'),
+    '§5.2':('How many call attempts are permitted in a week?','How many outbound contact attempts did open cases receive, on average, by current bucket?'),
+    '§7.3':('A customer tells us they filed a consumer proposal. What should the agent do?','How many customers are bankrupt or in a consumer proposal?'),
+    '§4.2':('A customer says their hours were cut at work. What must the agent do before asking for payment?','How many open cases have recorded hardship by queue?'),
+    '§3.3':('What is the grace period before a promise to pay is considered broken?',f'What was the promise-kept rate in {LAST_MONTH}?'),
+    '§6.1':('A customer says some charges on their card are fraudulent. What should the agent do?',None),
+    '§8.1':('A customer complains about how often we call. When must the complaint be recorded and who is it escalated to?',None),
+    '§4.3':('Do we need income evidence before putting a customer on the 3-month reduced payment programme?',None),
+}
+STATUS_QUESTION={'bankrupt':'are bankrupt','consumer_proposal':'have filed a consumer proposal','insolvent':'are bankrupt or in a consumer proposal',
+                 'deceased':'are recorded as deceased','cease':'asked us to stop calling'}
+STATUS_NOUN={'bankrupt':'bankrupt customers','consumer_proposal':'customers with a consumer proposal','insolvent':'insolvent customers',
+             'deceased':'deceased customers','cease':'customers who asked us to stop contact'}
+FOLLOWUP_CITIES=('Toronto','Montréal','Calgary','Vancouver')
+
+
 DEFAULT_SUGGESTIONS=[f'What was the promise-kept rate in {LAST_MONTH} by queue?',f'Which province has the highest cure rate in {LAST_MONTH}?','How many open cases are there by bucket?']
 
 
@@ -716,6 +766,23 @@ class InsightEngine:
         self.planner=planner
         self.sections=self._documents()
         self.index=BM25Okapi([tokens(x['text']) for x in self.sections]) if self.sections else None
+
+    def _cities(self):
+        if getattr(self,'_city_names',None) is None:
+            try:
+                with self._connect() as c:
+                    rows=c.execute(f"SELECT {CITY_NORMAL.replace('c.city','city')} n, mode(trim(city)) AS city_label FROM curated.customers WHERE city IS NOT NULL GROUP BY 1 HAVING count(*)>=200").fetchall()
+                self._city_names={n:label for n,label in rows if n and n not in CITY_EXCLUDED}
+            except (duckdb.Error,OSError):
+                self._city_names={}
+        return self._city_names
+
+    def _city(self,q):
+        plain=_plain(q)
+        found=[n for n in sorted(self._cities(),key=len,reverse=True) if re.search(r'(?<![a-z])'+re.escape(n)+r'(?![a-z])',plain)]
+        found=[n for n in found if not any(n!=m and n in m for m in found)]
+        if len(found)>1:raise PlanError('Ask about one city at a time, or use a province or "by province".')
+        return found[0] if found else None
 
     def _documents(self):
         path=self.dataset_root/'data/reference_documents.csv'
@@ -794,7 +861,7 @@ class InsightEngine:
                         raise PlanError('Call order is set on the Work queue page, which orders assigned cases by fixed policy rules (holds, contact limits, promises due). This question box answers portfolio-level questions.')
                     agent_ranking(lower)
                     rank=ranking(lower);plan_q=rank['question'] if rank else lower
-                    case_count=bool(re.search(r'\bcases?\b',plan_q) and re.search(r'how many|count|number|total|how much',plan_q))
+                    case_count=bool(re.search(r'\bcases?\b|\bcustomers?\b|\bclients?\b|\b(?:'+PEOPLE_WORDS+r')\b',plan_q) and re.search(r'how many|count|number|total|how much',plan_q))
                     policy_first=not case_count and bool(re.search(r'grace period|(?:considered|counts? as|treated as|deemed)\s+(?:a\s+)?broken|express consent|national do not call|consumer proposal',plan_q) or (re.search(r'\bpolicy|procedure|programme|program\b',plan_q) and not re.search(r'\brate\b|\bshare\b|\baverage\b',plan_q)))
                     plan=None if policy_first else self._plan(plan_q)
                     if plan is None and not policy_first and self.planner:
@@ -821,6 +888,9 @@ class InsightEngine:
         if result['reason']=='clarification_required' and not result['refused']:
             result['suggestions']=self._suggestions(lower)
         result['summary']=self._summary(result,lower)
+        if not result['refused'] and result['reason']!='clarification_required' and result['answer']:
+            try:result['followups']=self._followups(lower,result)
+            except (PlanError,duckdb.Error,ValueError,KeyError):result['followups']=[]
         if typos:
             result['corrections']=[{'typed':typed,'read_as':read} for typed,read in typos]
             result['summary']+=' (Read '+', '.join(f'“{typed}” as “{read}”' for typed,read in typos)+'.)'
@@ -871,6 +941,9 @@ class InsightEngine:
             cursor=c.execute(plan.sql,plan.params);columns=[x[0] for x in cursor.description]
             rows=[dict(zip(columns,row)) for row in cursor.fetchall()]
         meta=dict(getattr(plan,'metadata',None) or {})
+        if meta.get('suppress_below'):
+            limit=meta['suppress_below']
+            rows=[{k:(f'fewer than {limit}' if isinstance(v,int) and not isinstance(v,bool) and 0<v<limit else v) for k,v in r.items()} for r in rows]
         if rank:
             if rank['direction'] in ('good','bad'):raise PlanError('"Best" and "worst" are ambiguous for this result; ask for the highest or lowest value instead.')
             if not rows or columns[0] not in DIM_COLUMNS.get(rank['dimension'],set()):
@@ -1053,14 +1126,21 @@ class InsightEngine:
 
     def _count_plan(self,q):
         """Customer and agent headcounts from reviewed tables; unknown qualifiers clarify."""
-        target=re.search(r'\b(?:how many|number of|count of|total number of|total)\s+(?:(?:active|distinct|unique|current|existing|collections?|our|the|of|individual|resolved)\s+){0,3}(customers?|clients?|borrowers?|agents?|collectors?)\b',q)
+        target=re.search(r'\b(?:how many|number of|count of|total number of|total)\s+(?:(?:active|distinct|unique|current|existing|collections?|our|the|of|individual|resolved|bankrupt|insolvent|deceased)\s+){0,3}(customers?|clients?|borrowers?|agents?|collectors?|'+PEOPLE_WORDS+r')\b',q)
         if not target or template_cohort(q):return None
         agents=target[1].startswith(('agent','collector'))
+        status=None if agents else customer_status(q)
+        if re.fullmatch(PEOPLE_WORDS,target[1]) and not (status or amount_threshold(q)):
+            raise PlanError('Do you mean customers or agents? For example: "How many customers in Toronto are bankrupt?" or "How many agents work at the Toronto site?"')
+        city=None if agents else self._city(q)
         amount=amount_threshold(q)
         if amount and agents:raise PlanError('Amount thresholds apply to customers and cases, not agents. '+AMOUNT_HELP)
         if dpd_threshold(q):raise PlanError('Days-past-due thresholds apply to open cases, not customer counts. '+DPD_HELP)
         text=q.replace(SNAPSHOT,' ')
         for begin,finish,_ in reversed(_amount_matches(text)):text=text[:begin]+' '+text[finish:]
+        if city:text=re.sub(r'(?<![a-z])'+re.escape(city)+r'(?![a-z])',' ',_plain(text))
+        if status:
+            for pattern,*_ in CUSTOMER_STATUS.values():text=re.sub(pattern,' ',text)
         for name in sorted(PROVINCE_NAMES,key=len,reverse=True):text=re.sub(r'\b'+name+r'\b',' ',text)
         allowed=set('how many number of count total the a an are is there do does we have has had in our with at least one currently today now right as on bank maple portfolio overall all distinct unique by each per across altogether what s exist existing individual resolved c360 there'.split())
         if agents:
@@ -1068,6 +1148,7 @@ class InsightEngine:
         else:
             allowed|=set('customers customer clients client borrowers borrower open case cases collection collections province provinces'.split())|{c.lower() for c in PROVINCES}
             if amount:allowed|=set('overdue owe owes owing owed money balance balances debt debts amount outstanding arrears total in of more than dollars dollar cad who whose that which their'.split())
+            if status or city:allowed|=set('people persons individuals debtors who whose that which their them are were been be recorded filed file filing declared gone went into status flag flagged with a as live lives living based located from city town us asked or either to stop stopped calling contacting contact'.split())
         extra=[w for w in tokens(text) if w not in allowed]
         if extra:
             raise PlanError('I can count customers (overall, in one province, by province, or those with open cases) and agents (overall, at one site, by site or by role). That extra condition is not a reviewed count filter.')
@@ -1082,8 +1163,10 @@ class InsightEngine:
             sql=f"SELECT {prefix}count(*) FILTER (WHERE status='active') active_agents, count(*) agent_records FROM curated.agents"+(' WHERE site=?' if site else '')+(' GROUP BY 1 ORDER BY 1' if group else '')
             meta={'kind':'count','metric_id':'agents','grouping':group or 'none','filters':{'site':site} if site else {}}
             return Plan(sql,params,'Agent records from curated.agents; active means status=active (inactive records include terminated staff and leave).',meta)
-        filters=province_filter(q)
+        filters=province_filter(re.sub(r'(?<![a-z])'+re.escape(city)+r'(?![a-z])',' ',_plain(q)) if city else q)
         if dims and dims!=['province']:raise PlanError('Customer counts support grouping by province only.')
+        if city and dims==['province']:raise PlanError('A city lies in one province. Ask for the city on its own, or by province without the city.')
+        if status or city:return self._customer_profile_count(q,status,city,filters,amount,dims==['province'])
         open_cases=bool(amount) or bool(re.search(r'\bopen\b|\bin\s+collections?\b',q))
         table,column=('gold.customer_summary','customers_with_open_cases') if open_cases else ('gold.customers','customers')
         where=['open_cases>0'] if open_cases else []
@@ -1097,6 +1180,31 @@ class InsightEngine:
         if amount:note+=f' Limited to customers whose total overdue across their open cases (gold.customer_summary.total_overdue) is {amount_text(amount)}.'
         if filters or group:note+=" Province comes from the customer profile, normalized from source variants such as 'Ont.' and 'PQ'; missing provinces are 'unknown'."
         meta={'kind':'count','metric_id':column,'grouping':'province' if group else 'none','filters':{**filters,**({'overdue':amount} if amount else {})}}
+        return Plan(sql,params,note,meta)
+
+    def _customer_profile_count(self,q,status,city,filters,amount,group):
+        """Customers by recorded status and/or city; one city at a time, small counts suppressed."""
+        open_cases=bool(amount) or bool(re.search(r'\bopen\b|\bin\s+collections?\b',q))
+        column='customers_with_open_cases' if open_cases else 'customers'
+        joins=(' JOIN gold.customer_summary s USING(customer_id)' if open_cases else '')+(' JOIN curated.customers c ON c.crm_customer_id=g.crm_customer_id' if city else '')
+        where,params=[],[]
+        if status:where.append(CUSTOMER_STATUS[status][1])
+        if open_cases:where.append('s.open_cases>0')
+        if amount:where.append('s.total_overdue'+{'>':'>','>=':'>=','<':'<','<=':'<='}[amount['op']]+'?');params.append(amount['value'])
+        if city:where.append(CITY_NORMAL+'=?');params.append(city)
+        province=CUSTOMER_PROVINCE.replace('trim(province)','trim(g.province)')
+        if filters:where.append(province+'=?');params.append(filters['province'])
+        sql=f"SELECT {province+' AS province, ' if group else ''}count(*) {column} FROM gold.customers g{joins}"+(' WHERE '+' AND '.join(where) if where else '')+(' GROUP BY 1 ORDER BY 1' if group else '')
+        note='Resolved C360 customers (gold.customers, one row per customer after identity matching).'
+        if status:note+=f" Status from the customer record: {CUSTOMER_STATUS[status][2]} ({CUSTOMER_STATUS[status][1].replace('g.','')})."
+        if open_cases:note+=' Limited to customers with at least one open collections case.'
+        if amount:note+=f' Limited to customers whose total overdue across their open cases is {amount_text(amount)}.'
+        if city:note+=f' City from the CRM profile (curated.customers.city, accents and punctuation ignored). Counts below {SMALL_CELL} for one city are shown as "fewer than {SMALL_CELL}" to protect privacy.'
+        if filters or group:note+=" Province comes from the customer profile, normalized from source variants such as 'Ont.' and 'PQ'."
+        label=self._cities().get(city,city.title()) if city else None
+        meta={'kind':'count','metric_id':column,'grouping':'province' if group else 'none',
+              'filters':{**filters,**({'overdue':amount} if amount else {}),**({'status':status} if status else {}),**({'city':label} if city else {})}}
+        if city:meta['suppress_below']=SMALL_CELL
         return Plan(sql,params,note,meta)
 
     def _promise_count_plan(self,q):
@@ -1171,6 +1279,74 @@ class InsightEngine:
             self._verify(plan,pq,dict(rank) if rank else None)
             return True
         except PlanError:return False
+
+    def _followups(self,q,result):
+        """Up to three questions that build on this answer; data questions are checked as answerable."""
+        meta=result.get('plan') or {};filters=meta.get('filters') or {};data,policy=[],[]
+        sections=[x.get('section') for x in result.get('sources',[]) if isinstance(x,dict) and x.get('section')]
+        if sections and not meta:
+            for section in sections:
+                if section in POLICY_FOLLOWUPS and POLICY_FOLLOWUPS[section][1]:data.append(POLICY_FOLLOWUPS[section][1])
+            policy=[question for section,(question,_) in POLICY_FOLLOWUPS.items() if section not in sections]
+        elif meta.get('kind')=='count' and meta.get('metric_id') in ('customers','customers_with_open_cases'):
+            status,city,province,amount=filters.get('status'),filters.get('city'),filters.get('province'),filters.get('overdue')
+            where=f' in {city}' if city else f' in {PROVINCE_LABELS.get(province,province)}' if province else ''
+            if status:
+                others=[k for k in ('bankrupt','consumer_proposal','insolvent') if k!=status]
+                data.append(f'How many customers{where} {STATUS_QUESTION[others[0]]}?')
+                elsewhere=next(c for c in FOLLOWUP_CITIES if c!=city)
+                data.append(f'How many customers in {elsewhere} {STATUS_QUESTION[status]}?')
+                data.append(f'Which province has the most {STATUS_NOUN[status]}?')
+                if meta['metric_id']=='customers':data.append(f'How many {STATUS_NOUN[status]}{where} have open cases?')
+                data.append(f'How many customers{where} {STATUS_QUESTION[others[1]]}?')
+            elif amount:
+                bigger={'op':amount['op'],'value':amount['value']*2}
+                data+=[f'How many customers have {amount_text(amount)} overdue by province?',f'How many open cases have {amount_text(amount)} overdue?',
+                       f'How many customers have {amount_text(bigger)} overdue?']
+            elif city:
+                data+=[f'How many customers in {city} are bankrupt?',f'How many customers in {city} owe more than $1,000?',
+                       f"How many customers live in {next(c for c in FOLLOWUP_CITIES if c!=city)}?"]
+            else:
+                data+=['How many customers do we have by province?','How many customers have open cases?','How many customers in Toronto are bankrupt?','How many customers have more than $1,000 overdue?']
+        elif meta.get('metric_id') in AMOUNT_METRICS and (filters.get('overdue') or filters.get('dpd')):
+            # Keep the condition the person asked about; vary the breakdown and the threshold.
+            parts=([f"are {dpd_text(filters['dpd'])}"] if filters.get('dpd') else [])+([f"have {amount_text(filters['overdue'])} overdue"] if filters.get('overdue') else [])
+            cond=' and '.join(parts);where=f" in {PROVINCE_LABELS.get(filters['province'],filters['province'])}" if filters.get('province') else ''
+            current=meta.get('grouping','none')
+            breakdowns=[f'How many open cases{where} {cond} by {g}?' for g in ('queue','product','province') if g!=current and not (g=='province' and filters.get('province'))]
+            data.append(breakdowns[0])
+            if not filters.get('province') and current!='province':data.append(f'Which province has the most open cases that {cond}?')
+            data.append(f'What is the total overdue on open cases{where} that {cond}?')
+            if filters.get('dpd'):
+                d=filters['dpd'];data.append(f"How many open cases{where} are {dpd_text({'op':d['op'],'value':d['value']+30})}?")
+            data+=breakdowns[1:]
+        elif meta.get('metric_id') in METRIC_INFO:
+            metric=meta['metric_id'];label,unit,_,_,template=METRIC_INFO[metric];groups=CATALOG[metric]['groupings']
+            period=''
+            if '{period}' in template and not CATALOG[metric].get('snapshot_only'):
+                start,end=date.fromisoformat(meta['start_date']),date.fromisoformat(meta['end_date'])
+                last=end-timedelta(days=1)
+                period=f' in {calendar.month_name[start.month]} {start.year}' if start.day==1 and (start.year,start.month)==(last.year,last.month) else f' from {start.isoformat()} to {last.isoformat()}'
+            ask=lambda group='':template.format(period=period,group=group)
+            current=meta.get('grouping','none')
+            if current!='province' and 'province' in groups:
+                data.append(f'Which province has the highest {label}{period}?' if unit!='count' else f'Which province has the most {label}?')
+            for g in groups:
+                if g not in ('none','month','prior_broken',current):data.append(ask(' by '+g.replace('agent_site','site')))
+            if 'month' in groups and current!='month':data.append(template.format(period='',group=' by month over the last 6 months'))
+            if metric in AMOUNT_METRICS and not filters.get('overdue'):data.append('How many open cases have more than $1,000 overdue?')
+            if metric in AMOUNT_METRICS and not filters.get('dpd'):data.append('How many open cases are more than 90 days past due?')
+            if current!='none':data.insert(0,ask())
+        else:
+            return self._suggestions(q)
+        chosen=[]
+        for candidate in dict.fromkeys(data):
+            if _plain(candidate).rstrip('?').strip()!=_plain(q).rstrip('?').strip() and self._answerable(candidate):chosen.append(candidate)
+            if len(chosen)==3:break
+        for candidate in policy:
+            if len(chosen)==3:break
+            if _plain(candidate).rstrip('?')!=_plain(q).rstrip('?'):chosen.append(candidate)
+        return chosen
 
     def _suggestions(self,q):
         """Two or three closest questions the engine can answer, each checked by the planner."""

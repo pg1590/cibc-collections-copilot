@@ -83,24 +83,10 @@ function AnswerCard({ question, result, onAsk, pending }: Exchange & { onAsk: (q
         )}
 
         {!!result.suggestions?.length && (
-          <section aria-label="Suggested questions" className="space-y-2">
-            <h3 className="text-sm font-medium">Questions I can answer instead</h3>
-            <div className="flex flex-wrap gap-2">
-              {result.suggestions.map((suggestion) => (
-                <Button
-                  key={suggestion}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-auto py-1.5 text-left whitespace-normal"
-                  disabled={pending}
-                  onClick={() => onAsk(suggestion)}
-                >
-                  <CornerDownRight aria-hidden /> {suggestion}
-                </Button>
-              ))}
-            </div>
-          </section>
+          <QuestionChips label="Suggested questions" heading="Questions I can answer instead" questions={result.suggestions} onAsk={onAsk} pending={pending} />
+        )}
+        {!!result.followups?.length && (
+          <QuestionChips label="Related questions" heading="Related questions" questions={result.followups} onAsk={onAsk} pending={pending} />
         )}
 
         {!result.refused && result.explanation && (
@@ -161,6 +147,29 @@ function AnswerCard({ question, result, onAsk, pending }: Exchange & { onAsk: (q
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function QuestionChips({ label, heading, questions, onAsk, pending }: { label: string; heading: string; questions: string[]; onAsk: (text: string) => void; pending: boolean }) {
+  return (
+    <section aria-label={label} className="space-y-2">
+      <h3 className="text-sm font-medium">{heading}</h3>
+      <div className="flex flex-wrap gap-2">
+        {questions.map((question) => (
+          <Button
+            key={question}
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-auto py-1.5 text-left whitespace-normal"
+            disabled={pending}
+            onClick={() => onAsk(question)}
+          >
+            <CornerDownRight aria-hidden /> {question}
+          </Button>
+        ))}
+      </div>
+    </section>
   );
 }
 

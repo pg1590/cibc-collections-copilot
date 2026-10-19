@@ -122,6 +122,16 @@ for (const viewport of [{ width: 1440, height: 1000, tag: "desktop" }, { width: 
     await page.waitForFunction(() => /90 days past due/.test(document.querySelector('[aria-label="Answer summary"]')?.textContent ?? ""), null, { timeout: 90000 }).catch(() => {});
     check(`${v}: Enter asks the question`, /90 days past due/.test((await answered.textContent()) ?? ""));
     check(`${v}: asked question stays in the box`, (await box.inputValue()) === "How many open cases are over 90 days past due?");
+    // Every answer offers related questions that build on it; clicking one asks it.
+    const related = page.locator('[aria-label="Related questions"] button');
+    const first = ((await related.first().textContent().catch(() => "")) ?? "").trim();
+    check(`${v}: answer offers related questions`, (await related.count()) >= 1 && /90 days past due/.test(first), first);
+    if (first) {
+      await related.first().click();
+      await page.waitForFunction((text) => document.querySelector("#question")?.value === text, first, { timeout: 30000 }).catch(() => {});
+      await page.waitForFunction(() => document.querySelectorAll('[aria-label="Answer summary"]').length >= 2, null, { timeout: 90000 }).catch(() => {});
+      check(`${v}: a related question is asked and answered`, (await page.locator('[aria-label="Answer summary"]').count()) >= 2 && (await box.inputValue()) === first);
+    }
   }
   check(`${v}: ask ranking leads with a summary`, /highest promise-kept rate in August 2026/.test(ranking), ranking.slice(0, 90));
   if (v === "desktop") {

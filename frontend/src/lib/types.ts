@@ -77,6 +77,8 @@ export interface AskResponse {
   summary?: string;
   /** Closest questions the engine can answer, offered with a clarification. */
   suggestions?: string[];
+  /** Questions that build on this answer, each checked as answerable. */
+  followups?: string[];
   explanation?: string;
   sql_or_sources: string;
   refused: boolean;
