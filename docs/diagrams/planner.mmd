@@ -1,0 +1,19 @@
+flowchart LR
+  q[/"“How many open cases in Ontario<br/>are over 90 days past due?”"/] --> pre["Pre-process<br/>typos · thresholds<br/>· status · city"]
+  pre --> rules["Rule parser<br/>(tried first)"]
+  rules -- "no plan" --> llm["Gemini planner<br/>question + 18-metric<br/>catalog → JSON"]
+  rules -- plan --> plan["Plan JSON<br/>metric · grouping<br/>dates · filters"]
+  llm --> plan
+  plan --> v{"Validate<br/>catalog · enums<br/>thresholds kept"}
+  v -- ok --> sql["Reviewed SQL<br/>+ bound params"]
+  v -- fails --> cl["Clarify<br/>or refuse"]
+  sql --> db[("DuckDB<br/>read-only")]
+  db --> ans["Answer + SQL<br/>+ follow-ups"]
+  classDef io fill:#FFFFFF,stroke:#10262C,color:#10262C
+  classDef model fill:#0F7A6C,stroke:#0B5C52,color:#FFFFFF,font-weight:600
+  classDef out fill:#10262C,stroke:#10262C,color:#FFFFFF
+  classDef loop fill:#F6E3DD,stroke:#B4472E,color:#10262C
+  class q io
+  class llm model
+  class ans out
+  class cl loop

@@ -1,0 +1,15 @@
+flowchart LR
+  note[/"“Lost my job last month,<br/>can't pay this month”"/] --> norm["Normalise<br/>lowercase · accents"]
+  norm --> cues["9 regex cues<br/>EN + FR"]
+  cues --> x["x ∈ {0,1}⁹<br/>[1,0,0,1,0,0,0,0,0]"]
+  x --> z["z = b + Σ wᵢxᵢ<br/>−2.60 + 2.45 + 3.70"]
+  z --> s["σ(z) = 1/(1+e⁻ᶻ)<br/>p = 0.97"]
+  s --> d{"p ≥ 0.5<br/>OR any cue"}
+  d -- yes --> h["HARDSHIP<br/>+ cited sentence"]
+  d -- no --> n["No signal"]
+  classDef io fill:#FFFFFF,stroke:#10262C,color:#10262C
+  classDef model fill:#0F7A6C,stroke:#0B5C52,color:#FFFFFF,font-weight:600
+  classDef out fill:#10262C,stroke:#10262C,color:#FFFFFF
+  class note io
+  class z,s model
+  class h out

@@ -1,0 +1,20 @@
+flowchart LR
+  audio[/"Call audio"/] --> asr["Whisper base<br/>local CPU · int8"]
+  asr -. "agent reviews<br/>transcript" .-> note["Agent's<br/>call note"]
+  typed[/"Typed note"/] --> note
+  note --> g["Gemini extractor<br/>JSON schema"]
+  g -- "unavailable" --> r["Rule extractor<br/>sentence cues"]
+  r --> p["Proposals<br/>field · value · quote"]
+  g --> p
+  p --> v{"Quote verbatim<br/>in note? values<br/>pass rules?"}
+  v -- yes --> c["Agent confirms<br/>each field"]
+  v -- no --> x["Dropped"]
+  c --> plan["Updated plan<br/>+ audit entry"]
+  classDef io fill:#FFFFFF,stroke:#10262C,color:#10262C
+  classDef model fill:#0F7A6C,stroke:#0B5C52,color:#FFFFFF,font-weight:600
+  classDef out fill:#10262C,stroke:#10262C,color:#FFFFFF
+  classDef loop fill:#F6E3DD,stroke:#B4472E,color:#10262C
+  class audio,typed io
+  class asr,g model
+  class plan out
+  class x loop

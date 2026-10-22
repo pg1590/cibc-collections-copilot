@@ -1,0 +1,62 @@
+flowchart LR
+  subgraph L1["① INPUT"]
+    direction TB
+    crm[("CRM · 1.02M")]
+    sys[("Cases · contacts")]
+    notes[("Notes · 760K")]
+    audio[("Call audio")]
+    pol[("Policy docs")]
+    crm ~~~ sys ~~~ notes ~~~ audio ~~~ pol
+  end
+  subgraph L2["② DATA"]
+    direction TB
+    clean["Clean +<br/>normalise"] --> er["Identity<br/>resolution"] --> gold["Golden<br/>customer"]
+  end
+  subgraph L3["③ FEATURES"]
+    direction TB
+    txt["9 text cues"]
+    num["7 behaviour<br/>features"]
+    par["Online =<br/>offline"]
+    txt ~~~ num ~~~ par
+  end
+  subgraph L4["④ MODELS"]
+    direction TB
+    lr["Hardship<br/>classifier"]
+    asr["Whisper<br/>ASR"]
+    llm["Gemini<br/>(JSON only)"]
+    lr ~~~ asr ~~~ llm
+  end
+  subgraph L5["⑤ DECISION"]
+    direction TB
+    rules["Policy<br/>rules"]
+    verify["Verifier"]
+    rules ~~~ verify
+  end
+  subgraph L6["⑥ SERVING"]
+    direction TB
+    api["FastAPI"]
+    batch["Batch<br/>8 workers"]
+    api ~~~ batch
+  end
+  subgraph L7["⑦ OUTPUT"]
+    direction TB
+    plan["Next-best<br/>action"]
+    brief["Call brief"]
+    ask["Ask answer<br/>+ SQL"]
+    plan ~~~ brief ~~~ ask
+  end
+  L1 -- "rows · text<br/>audio" --> L2
+  L2 -- "customer_id<br/>+ history" --> L3
+  L3 -- "x ∈ {0,1}⁹ → model<br/>7 numbers → rules" --> L4
+  L4 -- "p · transcript<br/>· JSON" --> L5
+  L5 -- "action +<br/>reasons" --> L6
+  L6 -- "JSON<br/>over HTTP" --> L7
+  L7 -. "needs review" .-> rev{{"Supervisor review<br/>hash-chained audit"}}
+  classDef inp fill:#FFFFFF,stroke:#10262C,color:#10262C
+  classDef model fill:#0F7A6C,stroke:#0B5C52,color:#FFFFFF,font-weight:600
+  classDef out fill:#10262C,stroke:#10262C,color:#FFFFFF
+  classDef loop fill:#F6E3DD,stroke:#B4472E,color:#10262C
+  class crm,sys,notes,audio,pol inp
+  class lr,asr,llm model
+  class plan,brief,ask out
+  class rev loop

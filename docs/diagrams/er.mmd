@@ -1,0 +1,16 @@
+flowchart LR
+  rec[/"Source record<br/>name · DOB · phone · postal"/] --> blk["Blocking<br/>DOB+phone · DOB+postal<br/>· DOB+name"]
+  blk --> cand["Candidate<br/>CRM customers"]
+  cand --> sc["Score each pair<br/>0.99 · 0.985 · 0.97<br/>0.95 · 0.70"]
+  sc --> m{"best ≥ 0.97<br/>AND margin ≥ 0.04"}
+  m -- yes --> ok["MATCHED<br/>3,671,767"]
+  m -- "close call" --> rv["REVIEW<br/>64,145"]
+  cand -- "no candidate" --> un["UNMATCHED<br/>96,355"]
+  classDef io fill:#FFFFFF,stroke:#10262C,color:#10262C
+  classDef model fill:#0F7A6C,stroke:#0B5C52,color:#FFFFFF,font-weight:600
+  classDef out fill:#10262C,stroke:#10262C,color:#FFFFFF
+  classDef loop fill:#F6E3DD,stroke:#B4472E,color:#10262C
+  class rec io
+  class sc model
+  class ok out
+  class rv,un loop
