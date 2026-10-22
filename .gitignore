@@ -29,3 +29,7 @@ submission/*.zip
 submission/*.bundle
 .DS_Store
 .claude/settings.local.json
+
+# AI assistant instructions: kept local, not in the repo
+CLAUDE.md
+AGENTS.md
